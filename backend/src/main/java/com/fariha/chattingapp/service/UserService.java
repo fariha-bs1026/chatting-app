@@ -18,9 +18,12 @@ public class UserService {
 
     public List<UserDto> searchUsers(String search, String currentUserId) {
         String term = search == null ? "" : search.trim();
-        List<UserAccount> users = term.isBlank()
-                ? userRepository.findTop25ByIdNotOrderByDisplayNameAsc(currentUserId)
-                : userRepository.findTop25ByUsernameContainingIgnoreCaseOrDisplayNameContainingIgnoreCaseOrderByDisplayNameAsc(term, term);
+        if (term.length() < 2) {
+            return List.of();
+        }
+
+        List<UserAccount> users = userRepository
+                .findTop25ByUsernameContainingIgnoreCaseOrDisplayNameContainingIgnoreCaseOrderByDisplayNameAsc(term, term);
 
         return users.stream()
                 .filter(user -> !user.getId().equals(currentUserId))

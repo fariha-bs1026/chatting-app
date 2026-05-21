@@ -30,6 +30,16 @@ public class AuthController {
         return authService.register(request);
     }
 
+    @PostMapping("/register/start")
+    public RegistrationStartResponse startRegistration(@Valid @RequestBody RegisterRequest request) {
+        return authService.startRegistration(request);
+    }
+
+    @PostMapping("/register/verify")
+    public AuthResponse verifyRegistration(@Valid @RequestBody VerifyRegistrationRequest request) {
+        return authService.verifyRegistration(request);
+    }
+
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request) {
         return authService.login(request);

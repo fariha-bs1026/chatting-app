@@ -15,6 +15,8 @@ public class UserAccount {
     private String username;
 
     private String displayName;
+    @Indexed(unique = true, sparse = true)
+    private String phoneNumber;
     private String passwordHash;
     private String avatarUrl;
     private Instant createdAt = Instant.now();
@@ -43,6 +45,10 @@ public class UserAccount {
         return displayName;
     }
 
+    public String getPhoneNumber() {
+        return phoneNumber;
+    }
+
     public String getPasswordHash() {
         return passwordHash;
     }
@@ -65,6 +71,10 @@ public class UserAccount {
 
     public void setDisplayName(String displayName) {
         this.displayName = displayName;
+    }
+
+    public void setPhoneNumber(String phoneNumber) {
+        this.phoneNumber = phoneNumber;
     }
 
     public void setAvatarUrl(String avatarUrl) {

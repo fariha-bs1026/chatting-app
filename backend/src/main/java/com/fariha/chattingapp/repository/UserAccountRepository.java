@@ -11,6 +11,8 @@ public interface UserAccountRepository extends MongoRepository<UserAccount, Stri
 
     boolean existsByUsernameIgnoreCase(String username);
 
+    boolean existsByPhoneNumber(String phoneNumber);
+
     List<UserAccount> findTop25ByIdNotOrderByDisplayNameAsc(String id);
 
     List<UserAccount> findTop25ByUsernameContainingIgnoreCaseOrDisplayNameContainingIgnoreCaseOrderByDisplayNameAsc(

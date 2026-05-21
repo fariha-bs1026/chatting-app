@@ -10,6 +10,8 @@ import java.util.Optional;
 import java.util.Set;
 
 public interface ConversationRepository extends MongoRepository<Conversation, String> {
+    Optional<Conversation> findByDirectKey(String directKey);
+
     @Query("{ 'direct': true, 'participantIds': { $all: ?0, $size: 2 } }")
     Optional<Conversation> findDirectConversation(Set<String> userIds);
 

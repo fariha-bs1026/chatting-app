@@ -350,7 +350,8 @@ h2 {
 }
 
 .mode-tabs,
-.side-tabs {
+.side-tabs,
+.people-tabs {
   background: var(--panel-soft);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -364,8 +365,14 @@ h2 {
   grid-template-columns: repeat(3, 1fr);
 }
 
+.people-tabs {
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 2px;
+}
+
 .mode-tabs button,
-.side-tabs button {
+.side-tabs button,
+.people-tabs button {
   align-items: center;
   background: transparent;
   border: 0;
@@ -379,7 +386,8 @@ h2 {
 }
 
 .mode-tabs button.active,
-.side-tabs button.active {
+.side-tabs button.active,
+.people-tabs button.active {
   background: var(--panel);
   box-shadow: var(--soft-shadow);
   color: var(--text-strong);
@@ -423,11 +431,42 @@ input:focus {
   padding: 10px 12px;
 }
 
+.verification-note {
+  background: var(--incoming);
+  border: 1px solid #c7d2fe;
+  border-radius: 8px;
+  color: var(--incoming-text);
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+}
+
+.verification-note strong,
+.verification-note span,
+.verification-note code {
+  display: block;
+}
+
+.verification-note span {
+  font-size: 13px;
+  opacity: 0.78;
+}
+
+.verification-note code {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text-strong);
+  font-size: 13px;
+  padding: 7px 8px;
+}
+
 .primary-action,
 .secondary-action,
 .send-button,
 .icon-button,
-.theme-toggle {
+.theme-toggle,
+.text-action {
   border: 0;
   border-radius: 8px;
   min-height: 42px;
@@ -458,6 +497,12 @@ input:focus {
   justify-content: center;
   padding: 0 12px;
   white-space: nowrap;
+}
+
+.text-action {
+  background: transparent;
+  color: var(--muted);
+  font-weight: 800;
 }
 
 .app-shell {
@@ -764,6 +809,25 @@ input:focus {
   min-height: 0;
   overflow-y: auto;
   padding: 24px;
+}
+
+.load-more-messages {
+  align-self: center;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--soft-shadow);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  justify-self: center;
+  padding: 8px 14px;
+}
+
+.load-more-messages:hover {
+  border-color: var(--accent);
+  color: var(--text);
 }
 
 .thread-empty {

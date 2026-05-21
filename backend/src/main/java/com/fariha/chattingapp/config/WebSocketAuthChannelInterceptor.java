@@ -1,6 +1,7 @@
 package com.fariha.chattingapp.config;
 
 import com.fariha.chattingapp.entity.*;
+import com.fariha.chattingapp.repository.*;
 import com.fariha.chattingapp.service.*;
 
 import org.springframework.http.HttpHeaders;
@@ -16,9 +17,17 @@ import org.springframework.stereotype.Component;
 @Component
 public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
     private final AuthService authService;
+    private final UserAccountRepository userRepository;
+    private final ConversationRepository conversationRepository;
 
-    public WebSocketAuthChannelInterceptor(AuthService authService) {
+    public WebSocketAuthChannelInterceptor(
+            AuthService authService,
+            UserAccountRepository userRepository,
+            ConversationRepository conversationRepository
+    ) {
         this.authService = authService;
+        this.userRepository = userRepository;
+        this.conversationRepository = conversationRepository;
     }
 
     @Override
@@ -29,6 +38,41 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
                     .orElseThrow(() -> new AccessDeniedException("Invalid WebSocket token"));
             accessor.setUser(new StompPrincipal(user.getUsername()));
         }
+        if (accessor != null && StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
+            authorizeSubscription(accessor);
+        }
         return message;
+    }
+
+    private void authorizeSubscription(StompHeaderAccessor accessor) {
+        String conversationId = extractConversationId(accessor.getDestination());
+        if (conversationId == null) {
+            return;
+        }
+        if (accessor.getUser() == null) {
+            throw new AccessDeniedException("WebSocket subscription requires authentication");
+        }
+
+        UserAccount user = userRepository.findByUsernameIgnoreCase(accessor.getUser().getName())
+                .orElseThrow(() -> new AccessDeniedException("Invalid WebSocket user"));
+        boolean participant = conversationRepository.findById(conversationId)
+                .map(conversation -> conversation.hasParticipant(user.getId()))
+                .orElse(false);
+        if (!participant) {
+            throw new AccessDeniedException("You are not a participant in this conversation");
+        }
+    }
+
+    private static String extractConversationId(String destination) {
+        String prefix = "/topic/conversations/";
+        if (destination == null || !destination.startsWith(prefix)) {
+            return null;
+        }
+        String remainder = destination.substring(prefix.length());
+        if (remainder.isBlank()) {
+            return null;
+        }
+        int separatorIndex = remainder.indexOf('/');
+        return separatorIndex == -1 ? remainder : remainder.substring(0, separatorIndex);
     }
 }

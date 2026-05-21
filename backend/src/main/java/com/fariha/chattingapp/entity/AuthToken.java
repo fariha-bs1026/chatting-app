@@ -11,20 +11,21 @@ public class AuthToken {
     @Id
     private String id;
 
-    @Indexed(unique = true)
-    private String token;
+    @Indexed(unique = true, sparse = true)
+    private String tokenHash;
 
     @Indexed
     private String userId;
 
+    @Indexed(expireAfterSeconds = 0)
     private Instant expiresAt;
     private Instant createdAt = Instant.now();
 
     protected AuthToken() {
     }
 
-    public AuthToken(String token, String userId, Instant expiresAt) {
-        this.token = token;
+    public AuthToken(String tokenHash, String userId, Instant expiresAt) {
+        this.tokenHash = tokenHash;
         this.userId = userId;
         this.expiresAt = expiresAt;
     }
@@ -33,8 +34,8 @@ public class AuthToken {
         return id;
     }
 
-    public String getToken() {
-        return token;
+    public String getTokenHash() {
+        return tokenHash;
     }
 
     public String getUserId() {

@@ -7,9 +7,9 @@ import java.time.Instant;
 import java.util.Optional;
 
 public interface AuthTokenRepository extends MongoRepository<AuthToken, String> {
-    Optional<AuthToken> findByTokenAndExpiresAtAfter(String token, Instant now);
+    Optional<AuthToken> findByTokenHashAndExpiresAtAfter(String tokenHash, Instant now);
 
-    Optional<AuthToken> findByToken(String token);
+    Optional<AuthToken> findByTokenHash(String tokenHash);
 
-    void deleteByToken(String token);
+    void deleteByTokenHash(String tokenHash);
 }

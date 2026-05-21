@@ -16,6 +16,10 @@ public record RegisterRequest(
         String displayName,
 
         @NotBlank
+        @Pattern(regexp = "^\\+[1-9]\\d{7,14}$", message = "Phone number must use E.164 format, for example +8801712345678")
+        String phoneNumber,
+
+        @NotBlank
         @Size(min = 6, max = 100)
         String password
 ) {

@@ -2,20 +2,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import {
-  Check,
-  CheckCheck,
   Image,
   LogOut,
-  Moon,
   Search,
   Send,
-  Sun,
   UserPlus,
   Users,
   Wifi,
   WifiOff
 } from 'lucide-react';
 import { apiFetch, WS_URL } from './api';
+import AuthViewPanel from './components/AuthView';
+import LogoMark from './components/LogoMark';
+import StatusIcon from './components/StatusIcon';
+import ThemeToggle from './components/ThemeToggle';
 
 const AUTH_STORAGE_KEY = 'chatting-app-auth';
 const THEME_STORAGE_KEY = 'chatflow-theme';
@@ -80,180 +80,6 @@ function conversationSubtitle(conversation, currentUser) {
   return other.online ? 'Online' : other.lastSeenAt ? `Last seen ${formatTime(other.lastSeenAt)}` : 'Offline';
 }
 
-function LogoMark({ size = 'default' }) {
-  const sizeClass = size === 'large' ? 'large' : size === 'tiny' ? 'tiny' : '';
-  return (
-    <span className={`logo-mark ${sizeClass}`} aria-hidden="true">
-      <svg viewBox="0 0 40 40" role="img">
-        <path
-          className="logo-bubble"
-          d="M10.4 11.6c0-3 2.4-5.4 5.4-5.4h8.4c3 0 5.4 2.4 5.4 5.4v6.8c0 3-2.4 5.4-5.4 5.4h-4.7l-6 5.1c-.9.7-2.2.1-2.2-1v-4.2c-2.7-.3-4.9-2.6-4.9-5.3v-6.8Z"
-        />
-        <path
-          className="logo-heart"
-          d="M19.9 18.8c-3.7-2.2-5.5-3.8-5.5-6.1 0-1.5 1.2-2.7 2.8-2.7 1.1 0 2 .5 2.7 1.5.7-1 1.6-1.5 2.7-1.5 1.6 0 2.8 1.2 2.8 2.7 0 2.3-1.8 3.9-5.5 6.1Z"
-        />
-        <circle className="logo-dot" cx="30.2" cy="29.7" r="3.8" />
-      </svg>
-    </span>
-  );
-}
-
-function ThemeToggle({ theme, onToggle }) {
-  const isDark = theme === 'dark';
-  return (
-    <button
-      className="theme-toggle"
-      type="button"
-      onClick={onToggle}
-      title={isDark ? 'Switch to white mode' : 'Switch to dark mode'}
-      aria-label={isDark ? 'Switch to white mode' : 'Switch to dark mode'}
-    >
-      {isDark ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}
-      <span>{isDark ? 'White' : 'Dark'}</span>
-    </button>
-  );
-}
-
-function StatusIcon({ status }) {
-  if (status === 'READ') {
-    return <CheckCheck className="status-icon read" size={15} aria-hidden="true" />;
-  }
-  if (status === 'DELIVERED') {
-    return <CheckCheck className="status-icon delivered" size={15} aria-hidden="true" />;
-  }
-  return <Check className="status-icon sent" size={15} aria-hidden="true" />;
-}
-
-function AuthView({ onAuth, theme, onToggleTheme }) {
-  const [mode, setMode] = useState('login');
-  const [form, setForm] = useState({
-    username: '',
-    displayName: '',
-    password: ''
-  });
-  const [error, setError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-
-  async function submit(event) {
-    event.preventDefault();
-    setError('');
-    setSubmitting(true);
-    try {
-      const path = mode === 'login' ? '/auth/login' : '/auth/register';
-      const body = mode === 'login'
-        ? { username: form.username, password: form.password }
-        : form;
-      const data = await apiFetch(path, {
-        method: 'POST',
-        body
-      });
-      onAuth(data);
-    } catch (exception) {
-      setError(exception.message);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <main className="auth-screen">
-      <section className="auth-showcase" aria-hidden="true">
-        <div className="showcase-brand">
-          <LogoMark size="large" />
-          <div>
-            <span>ChatFlow</span>
-            <strong>Realtime conversations</strong>
-          </div>
-        </div>
-
-        <div className="phone-preview">
-          <div className="preview-topbar">
-            <div className="avatar small">FA</div>
-            <div>
-              <strong>Fariha</strong>
-              <span>Online</span>
-            </div>
-          </div>
-          <div className="preview-thread">
-            <div className="preview-bubble their-preview">Are we testing the mobile app next?</div>
-            <div className="preview-bubble my-preview">Yes, same Spring Boot API.</div>
-            <div className="preview-bubble their-preview">Perfect. Web and Flutter together.</div>
-          </div>
-          <div className="preview-composer">
-            <span>Message</span>
-            <Send size={15} aria-hidden="true" />
-          </div>
-        </div>
-      </section>
-
-      <form className="auth-panel" onSubmit={submit}>
-        <ThemeToggle theme={theme} onToggle={onToggleTheme} />
-
-        <div className="brand-row">
-          <LogoMark />
-          <div>
-            <h1>ChatFlow</h1>
-            <p>{mode === 'login' ? 'Welcome back' : 'Create your account'}</p>
-          </div>
-        </div>
-
-        <div className="mode-tabs" role="tablist" aria-label="Authentication mode">
-          <button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>
-            Login
-          </button>
-          <button type="button" className={mode === 'register' ? 'active' : ''} onClick={() => setMode('register')}>
-            Register
-          </button>
-        </div>
-
-        <label>
-          Username
-          <input
-            value={form.username}
-            onChange={(event) => setForm({ ...form, username: event.target.value })}
-            autoComplete="username"
-            minLength={3}
-            required
-          />
-        </label>
-
-        {mode === 'register' && (
-          <label>
-            Display name
-            <input
-              value={form.displayName}
-              onChange={(event) => setForm({ ...form, displayName: event.target.value })}
-              autoComplete="name"
-              minLength={2}
-              required
-            />
-          </label>
-        )}
-
-        <label>
-          Password
-          <input
-            value={form.password}
-            onChange={(event) => setForm({ ...form, password: event.target.value })}
-            type="password"
-            autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-            minLength={6}
-            required
-          />
-        </label>
-
-        {error && <p className="form-error">{error}</p>}
-
-        <button className="primary-action" type="submit" disabled={submitting}>
-          <LogoMark size="tiny" />
-          {submitting ? 'Working...' : mode === 'login' ? 'Login' : 'Create account'}
-        </button>
-      </form>
-    </main>
-  );
-}
-
 function App() {
   const [auth, setAuth] = useState(storedAuth);
   const [theme, setTheme] = useState(storedTheme);
@@ -261,10 +87,12 @@ function App() {
   const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [messagePage, setMessagePage] = useState({ nextBefore: null, hasMore: false });
   const [draft, setDraft] = useState('');
   const [assetUrl, setAssetUrl] = useState('');
   const [search, setSearch] = useState('');
   const [sideView, setSideView] = useState('chats');
+  const [peopleMode, setPeopleMode] = useState('contacts');
   const [groupName, setGroupName] = useState('');
   const [groupMembers, setGroupMembers] = useState([]);
   const [socketReady, setSocketReady] = useState(false);
@@ -272,6 +100,7 @@ function App() {
   const stompRef = useRef(null);
 
   const currentUser = auth?.user;
+  const searchTerm = search.trim().toLowerCase();
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -283,14 +112,62 @@ function App() {
   }, []);
 
   const visibleUsers = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) {
-      return users;
+    if (searchTerm.length < 2) {
+      return [];
     }
     return users.filter((user) =>
-      user.displayName.toLowerCase().includes(term) || user.username.toLowerCase().includes(term)
+      user.displayName.toLowerCase().includes(searchTerm) || user.username.toLowerCase().includes(searchTerm)
     );
-  }, [search, users]);
+  }, [searchTerm, users]);
+
+  const contactUsers = useMemo(() => {
+    if (!currentUser) {
+      return [];
+    }
+
+    const contacts = new Map();
+    conversations
+      .filter((conversation) => conversation.direct)
+      .forEach((conversation) => {
+        const contact = conversation.participants.find((user) => user.id !== currentUser.id);
+        if (contact) {
+          contacts.set(contact.id, contact);
+        }
+      });
+
+    return Array.from(contacts.values()).sort((first, second) =>
+      first.displayName.localeCompare(second.displayName)
+    );
+  }, [conversations, currentUser]);
+
+  const visibleContacts = useMemo(() => {
+    if (!searchTerm) {
+      return contactUsers;
+    }
+    return contactUsers.filter((user) =>
+      user.displayName.toLowerCase().includes(searchTerm) || user.username.toLowerCase().includes(searchTerm)
+    );
+  }, [contactUsers, searchTerm]);
+
+  const visibleConversations = useMemo(() => {
+    if (!currentUser) {
+      return [];
+    }
+
+    if (!searchTerm) {
+      return conversations;
+    }
+    return conversations.filter((conversation) => {
+      const title = conversationTitle(conversation, currentUser).toLowerCase();
+      const subtitle = conversationSubtitle(conversation, currentUser).toLowerCase();
+      const lastMessage = conversation.lastMessage?.content?.toLowerCase() || '';
+      return title.includes(searchTerm) || subtitle.includes(searchTerm) || lastMessage.includes(searchTerm);
+    });
+  }, [conversations, currentUser, searchTerm]);
+
+  const searchPlaceholder = sideView === 'people'
+    ? peopleMode === 'contacts' ? 'Search contacts' : 'Search by name or username'
+    : sideView === 'groups' ? 'Search people' : 'Search chats';
 
   const saveAuth = useCallback((data) => {
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data));
@@ -301,11 +178,21 @@ function App() {
     if (!auth?.token) {
       return;
     }
-    const data = await apiFetch(`/users?search=${encodeURIComponent(search)}`, {
+    const shouldSearchUsers = sideView === 'groups' || (sideView === 'people' && peopleMode === 'search');
+    if (!shouldSearchUsers) {
+      setUsers([]);
+      return;
+    }
+    const term = search.trim();
+    if (term.length < 2) {
+      setUsers([]);
+      return;
+    }
+    const data = await apiFetch(`/users?search=${encodeURIComponent(term)}`, {
       token: auth.token
     });
     setUsers(data);
-  }, [auth?.token, search]);
+  }, [auth?.token, peopleMode, search, sideView]);
 
   const loadConversations = useCallback(async () => {
     if (!auth?.token) {
@@ -325,12 +212,42 @@ function App() {
 
   const openConversation = useCallback(async (conversation) => {
     setSelectedConversation(conversation);
-    const data = await apiFetch(`/conversations/${conversation.id}/messages`, {
+    const data = await apiFetch(`/conversations/${conversation.id}/messages?limit=50`, {
       token: auth.token
     });
-    setMessages(data);
+    setMessages(data.messages || data);
+    setMessagePage({
+      nextBefore: data.nextBefore || null,
+      hasMore: Boolean(data.hasMore)
+    });
     setError('');
   }, [auth?.token]);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!selectedConversation || !messagePage.hasMore) {
+      return;
+    }
+    const query = new URLSearchParams({ limit: '50' });
+    if (messagePage.nextBefore) {
+      query.set('before', messagePage.nextBefore);
+    }
+    try {
+      const data = await apiFetch(`/conversations/${selectedConversation.id}/messages?${query.toString()}`, {
+        token: auth.token
+      });
+      setMessages((current) => {
+        const existingIds = new Set(current.map((message) => message.id));
+        const olderMessages = (data.messages || []).filter((message) => !existingIds.has(message.id));
+        return [...olderMessages, ...current];
+      });
+      setMessagePage({
+        nextBefore: data.nextBefore || null,
+        hasMore: Boolean(data.hasMore)
+      });
+    } catch (exception) {
+      setError(exception.message);
+    }
+  }, [auth?.token, messagePage.hasMore, messagePage.nextBefore, selectedConversation]);
 
   useEffect(() => {
     if (!auth?.token) {
@@ -406,13 +323,12 @@ function App() {
         method: 'POST',
         token: auth.token
       });
-    } catch {
-      // Local logout should still clear the browser state.
-    }
+    } catch {}
     localStorage.removeItem(AUTH_STORAGE_KEY);
     setAuth(null);
     setSelectedConversation(null);
     setMessages([]);
+    setMessagePage({ nextBefore: null, hasMore: false });
   }
 
   async function startDirectChat(user) {
@@ -497,7 +413,7 @@ function App() {
   }
 
   if (!auth) {
-    return <AuthView onAuth={saveAuth} theme={theme} onToggleTheme={toggleTheme} />;
+    return <AuthViewPanel onAuth={saveAuth} theme={theme} onToggleTheme={toggleTheme} />;
   }
 
   return (
@@ -529,7 +445,7 @@ function App() {
 
         <label className="search-box">
           <Search size={17} aria-hidden="true" />
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search" />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={searchPlaceholder} />
         </label>
 
         <div className="side-tabs" role="tablist" aria-label="Sidebar view">
@@ -549,7 +465,7 @@ function App() {
 
         {sideView === 'chats' && (
           <div className="list-scroll">
-            {conversations.map((conversation) => (
+            {visibleConversations.map((conversation) => (
               <button
                 className={`conversation-item ${selectedConversation?.id === conversation.id ? 'active' : ''}`}
                 key={conversation.id}
@@ -565,12 +481,52 @@ function App() {
               </button>
             ))}
             {conversations.length === 0 && <p className="empty-copy">No conversations yet.</p>}
+            {conversations.length > 0 && visibleConversations.length === 0 && <p className="empty-copy">No chats found.</p>}
           </div>
         )}
 
         {sideView === 'people' && (
           <div className="list-scroll">
-            {visibleUsers.map((user) => (
+            <div className="people-tabs" role="tablist" aria-label="People source">
+              <button
+                className={peopleMode === 'contacts' ? 'active' : ''}
+                type="button"
+                onClick={() => setPeopleMode('contacts')}
+              >
+                <Users size={15} aria-hidden="true" />
+                Contacts
+              </button>
+              <button
+                className={peopleMode === 'search' ? 'active' : ''}
+                type="button"
+                onClick={() => setPeopleMode('search')}
+              >
+                <Search size={15} aria-hidden="true" />
+                Search
+              </button>
+            </div>
+
+            {peopleMode === 'contacts' && visibleContacts.map((user) => (
+              <button className="user-item" key={user.id} type="button" onClick={() => startDirectChat(user)}>
+                <div className="avatar small">{initials(user.displayName)}</div>
+                <div className="conversation-copy">
+                  <strong>{user.displayName}</strong>
+                  <span>{user.online ? 'Online' : `@${user.username}`}</span>
+                </div>
+                <LogoMark size="tiny" />
+              </button>
+            ))}
+            {peopleMode === 'contacts' && contactUsers.length === 0 && (
+              <p className="empty-copy">No contacts yet. Use Search to start a chat.</p>
+            )}
+            {peopleMode === 'contacts' && contactUsers.length > 0 && visibleContacts.length === 0 && (
+              <p className="empty-copy">No contacts found.</p>
+            )}
+
+            {peopleMode === 'search' && searchTerm.length < 2 && (
+              <p className="empty-copy">Search by name or username to find someone new.</p>
+            )}
+            {peopleMode === 'search' && visibleUsers.map((user) => (
               <button className="user-item" key={user.id} type="button" onClick={() => startDirectChat(user)}>
                 <div className="avatar small">{initials(user.displayName)}</div>
                 <div className="conversation-copy">
@@ -580,7 +536,9 @@ function App() {
                 <UserPlus size={17} aria-hidden="true" />
               </button>
             ))}
-            {visibleUsers.length === 0 && <p className="empty-copy">No users found.</p>}
+            {peopleMode === 'search' && searchTerm.length >= 2 && visibleUsers.length === 0 && (
+              <p className="empty-copy">No users found.</p>
+            )}
           </div>
         )}
 
@@ -591,6 +549,9 @@ function App() {
               <input value={groupName} onChange={(event) => setGroupName(event.target.value)} required />
             </label>
             <div className="member-list">
+              {searchTerm.length < 2 && (
+                <p className="empty-copy">Search people to add group members.</p>
+              )}
               {visibleUsers.map((user) => (
                 <label className="member-row" key={user.id}>
                   <input
@@ -601,6 +562,7 @@ function App() {
                   <span>{user.displayName}</span>
                 </label>
               ))}
+              {searchTerm.length >= 2 && visibleUsers.length === 0 && <p className="empty-copy">No users found.</p>}
             </div>
             <button className="secondary-action" type="submit">
               <Users size={17} aria-hidden="true" />
@@ -627,6 +589,11 @@ function App() {
 
             <div className="chat-body">
               <section className="message-list" aria-live="polite">
+                {messagePage.hasMore && (
+                  <button className="load-more-messages" type="button" onClick={loadOlderMessages}>
+                    Load older messages
+                  </button>
+                )}
                 {messages.length === 0 && (
                   <div className="thread-empty">
                     <LogoMark />

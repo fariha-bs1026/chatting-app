@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Controller;
 
 import java.security.Principal;
@@ -54,6 +55,11 @@ public class ChatSocketController {
 
     @MessageMapping("/chat.typing")
     public void typing(@Payload TypingEvent event, Principal principal) {
+        UserAccount user = userRepository.findByUsernameIgnoreCase(principal.getName())
+                .orElseThrow();
+        if (!chatService.isParticipant(event.conversationId(), user.getId())) {
+            throw new AccessDeniedException("You are not a participant in this conversation");
+        }
         TypingEvent outgoing = new TypingEvent(event.conversationId(), principal.getName(), event.typing());
         messagingTemplate.convertAndSend("/topic/conversations/" + event.conversationId() + "/typing", outgoing);
     }

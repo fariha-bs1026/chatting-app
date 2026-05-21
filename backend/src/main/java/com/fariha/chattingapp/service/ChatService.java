@@ -3,11 +3,15 @@ package com.fariha.chattingapp.service;
 import com.fariha.chattingapp.dto.*;
 import com.fariha.chattingapp.entity.*;
 import com.fariha.chattingapp.repository.*;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -37,8 +41,10 @@ public class ChatService {
         UserAccount current = getUser(currentUser.getId());
         UserAccount other = getUser(otherUserId);
         Set<String> participantIds = Set.of(current.getId(), other.getId());
+        String directKey = Conversation.directKeyFor(participantIds);
 
-        Conversation conversation = conversationRepository.findDirectConversation(participantIds)
+        Conversation conversation = conversationRepository.findByDirectKey(directKey)
+                .or(() -> conversationRepository.findDirectConversation(participantIds))
                 .orElseGet(() -> conversationRepository.save(new Conversation(true, participantIds)));
 
         return toConversationDto(conversation);
@@ -70,12 +76,25 @@ public class ChatService {
                 .toList();
     }
 
-    public List<MessageDto> getMessages(String conversationId, UserAccount currentUser) {
+    public MessagePageResponse getMessages(String conversationId, Instant before, Integer requestedLimit, UserAccount currentUser) {
         requireParticipant(conversationId, currentUser.getId());
-        return messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId)
+        int limit = normalizeLimit(requestedLimit);
+        PageRequest pageRequest = PageRequest.of(0, limit + 1, Sort.by(Sort.Direction.DESC, "createdAt"));
+        List<ChatMessage> page = before == null
+                ? messageRepository.findByConversationId(conversationId, pageRequest)
+                : messageRepository.findByConversationIdAndCreatedAtBefore(conversationId, before, pageRequest);
+
+        boolean hasMore = page.size() > limit;
+        List<ChatMessage> currentPage = new ArrayList<>(hasMore ? page.subList(0, limit) : page);
+        Collections.reverse(currentPage);
+
+        List<MessageDto> messages = currentPage
                 .stream()
                 .map(this::toMessageDto)
                 .toList();
+        Instant nextBefore = hasMore && !currentPage.isEmpty() ? currentPage.get(0).getCreatedAt() : null;
+
+        return new MessagePageResponse(messages, nextBefore, hasMore);
     }
 
     public MessageDto sendMessage(SendMessageRequest request, UserAccount sender) {
@@ -105,6 +124,12 @@ public class ChatService {
         ChatMessage message = messageRepository.findById(messageId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Message not found"));
         Conversation conversation = requireParticipant(message.getConversationId(), currentUser.getId());
+        if (message.getSenderId().equals(currentUser.getId()) && status != MessageStatus.SENT) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cannot update status of your own message");
+        }
+        if (status.ordinal() < message.getStatus().ordinal()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Message status cannot move backward");
+        }
         message.setStatus(status);
         ChatMessage savedMessage = messageRepository.save(message);
         conversation.touch();
@@ -115,6 +140,12 @@ public class ChatService {
     public ConversationDto getConversation(String conversationId, UserAccount currentUser) {
         Conversation conversation = requireParticipant(conversationId, currentUser.getId());
         return toConversationDto(conversation);
+    }
+
+    public boolean isParticipant(String conversationId, String userId) {
+        return conversationRepository.findById(conversationId)
+                .map(conversation -> conversation.hasParticipant(userId))
+                .orElse(false);
     }
 
     private ConversationDto toConversationDto(Conversation conversation) {
@@ -175,5 +206,12 @@ public class ChatService {
         } catch (RuntimeException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported message status");
         }
+    }
+
+    private static int normalizeLimit(Integer requestedLimit) {
+        if (requestedLimit == null) {
+            return 50;
+        }
+        return Math.max(1, Math.min(requestedLimit, 100));
     }
 }
