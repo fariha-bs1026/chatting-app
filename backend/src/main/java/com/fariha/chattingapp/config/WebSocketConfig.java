@@ -17,13 +17,16 @@ import java.util.Arrays;
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private final WebSocketAuthChannelInterceptor authChannelInterceptor;
+    private final CookieAuthHandshakeInterceptor cookieAuthHandshakeInterceptor;
     private final String allowedOrigins;
 
     public WebSocketConfig(
             WebSocketAuthChannelInterceptor authChannelInterceptor,
+            CookieAuthHandshakeInterceptor cookieAuthHandshakeInterceptor,
             @Value("${app.cors.allowed-origins:http://localhost:5173}") String allowedOrigins
     ) {
         this.authChannelInterceptor = authChannelInterceptor;
+        this.cookieAuthHandshakeInterceptor = cookieAuthHandshakeInterceptor;
         this.allowedOrigins = allowedOrigins;
     }
 
@@ -31,13 +34,15 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns(parseAllowedOrigins())
+                .addInterceptors(cookieAuthHandshakeInterceptor)
                 .withSockJS();
     }
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
-        registry.enableSimpleBroker("/topic");
+        registry.enableSimpleBroker("/topic", "/queue");
         registry.setApplicationDestinationPrefixes("/app");
+        registry.setUserDestinationPrefix("/user");
     }
 
     @Override

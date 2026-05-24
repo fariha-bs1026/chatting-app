@@ -2,14 +2,15 @@ package com.fariha.chattingapp.dto;
 
 import com.fariha.chattingapp.entity.*;
 
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 import java.util.Set;
 
 public record CreateGroupRequest(
-        @NotBlank @Size(max = 120) String name,
+        @NotBlank(message = "{group.name.required}") @Size(max = 120) String name,
         @Size(max = 500) String description,
-        Set<String> memberIds
+        @NotEmpty(message = "{group.members.required}") @Size(max = 100) Set<@NotBlank String> memberIds
 ) {
 }

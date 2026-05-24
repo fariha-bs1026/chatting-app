@@ -19,6 +19,7 @@ public class UserAccount {
     private String phoneNumber;
     private String passwordHash;
     private String avatarUrl;
+    private String avatarKey;
     private Instant createdAt = Instant.now();
     private Instant lastSeenAt;
     private boolean online;
@@ -57,6 +58,10 @@ public class UserAccount {
         return avatarUrl;
     }
 
+    public String getAvatarKey() {
+        return avatarKey;
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }
@@ -79,6 +84,10 @@ public class UserAccount {
 
     public void setAvatarUrl(String avatarUrl) {
         this.avatarUrl = avatarUrl;
+    }
+
+    public void setAvatarKey(String avatarKey) {
+        this.avatarKey = avatarKey;
     }
 
     public void setLastSeenAt(Instant lastSeenAt) {

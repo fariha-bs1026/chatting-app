@@ -1,6 +1,7 @@
 package com.fariha.chattingapp.repository;
 
 import com.fariha.chattingapp.entity.ChatMessage;
+import com.fariha.chattingapp.entity.MessageStatus;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
@@ -16,4 +17,6 @@ public interface ChatMessageRepository extends MongoRepository<ChatMessage, Stri
     List<ChatMessage> findByConversationIdAndCreatedAtBefore(String conversationId, Instant before, Pageable pageable);
 
     Optional<ChatMessage> findFirstByConversationIdOrderByCreatedAtDesc(String conversationId);
+
+    long countByConversationIdAndSenderIdNotAndStatusNot(String conversationId, String senderId, MessageStatus status);
 }

@@ -34,6 +34,7 @@ For a dummy project, the app is roughly at a solid MVP stage. For a real consume
 - Direct conversation creation.
 - Direct conversation reuse with a uniqueness key.
 - Group conversation creation.
+- Per-user chat delete/hide API.
 - Cursor-style message history pagination.
 - Message sending API.
 - WebSocket/STOMP message sending.
@@ -70,6 +71,8 @@ For a dummy project, the app is roughly at a solid MVP stage. For a real consume
 - Group creation UI.
 - Message composer.
 - Optional asset URL field for image/file-style messages.
+- MinIO-backed image upload endpoint and frontend image picker.
+- Inline image rendering in chat bubbles using presigned media URLs.
 - Realtime WebSocket message receiving.
 - Message status icons.
 - Load older messages control for paginated history.
@@ -102,12 +105,17 @@ Conversations:
 - `GET /api/conversations`
 - `POST /api/conversations/direct`
 - `POST /api/conversations/groups`
+- `DELETE /api/conversations/{conversationId}`
 - `GET /api/conversations/{conversationId}/messages?limit=50&before=...`
 - `POST /api/conversations/{conversationId}/messages`
 
 Messages:
 
 - `PATCH /api/messages/{messageId}/status`
+
+Media:
+
+- `POST /api/media`
 
 Presence:
 
@@ -125,9 +133,10 @@ WebSocket:
 
 Docker:
 
-- `docker-compose.yml` starts backend and frontend only.
+- `docker-compose.yml` starts backend, frontend, and MinIO.
 - Use `docker compose up --build` or `docker-compose up --build`, depending on the installed Docker CLI.
 - MongoDB is not included because the project uses the local MongoDB service.
+- MinIO console runs at `http://localhost:9001`.
 
 ## SMS Verification Details
 
@@ -185,6 +194,8 @@ mvn test
   - message pagination works.
   - sender cannot mark own message read.
   - direct conversations are reused for the same participants.
+  - media upload endpoint requires authentication and a file.
+  - invalid/spoofed image uploads are rejected before storage.
 
 ## Running App
 
@@ -193,12 +204,15 @@ Current expected local URLs:
 - Frontend: `http://127.0.0.1:5173`
 - Backend: `http://localhost:8080`
 - MongoDB: `mongodb://localhost:27017/chatting_app`
+- MinIO console: `http://localhost:9001`
 
 Docker URLs:
 
 - Frontend: `http://localhost:3000`
 - Backend: `http://localhost:8080`
 - MongoDB remains local at `mongodb://localhost:27017/chatting_app`.
+- MinIO API: `http://localhost:9000`
+- MinIO console: `http://localhost:9001`
 
 ## Known Gaps
 
@@ -211,7 +225,7 @@ These are not done yet:
 - Password reset.
 - Profile editing.
 - Avatar upload.
-- Proper media upload and file storage.
+- General document/video upload beyond image files.
 - Push notifications.
 - Mobile app implementation.
 - End-to-end encryption.

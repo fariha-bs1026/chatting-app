@@ -13,11 +13,15 @@ public record UserDto(
         Instant lastSeenAt
 ) {
     public static UserDto from(UserAccount user) {
+        return from(user, user.getAvatarUrl());
+    }
+
+    public static UserDto from(UserAccount user, String avatarUrl) {
         return new UserDto(
                 user.getId(),
                 user.getUsername(),
                 user.getDisplayName(),
-                user.getAvatarUrl(),
+                avatarUrl,
                 user.isOnline(),
                 user.getLastSeenAt()
         );

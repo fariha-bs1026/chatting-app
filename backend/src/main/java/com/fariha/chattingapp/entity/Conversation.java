@@ -25,6 +25,9 @@ public class Conversation {
     @Indexed
     private Set<String> participantIds = new LinkedHashSet<>();
 
+    @Indexed
+    private Set<String> hiddenForUserIds = new LinkedHashSet<>();
+
     private Instant createdAt = Instant.now();
     private Instant updatedAt = Instant.now();
 
@@ -73,6 +76,13 @@ public class Conversation {
         return participantIds;
     }
 
+    public Set<String> getHiddenForUserIds() {
+        if (hiddenForUserIds == null) {
+            hiddenForUserIds = new LinkedHashSet<>();
+        }
+        return hiddenForUserIds;
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }
@@ -83,6 +93,23 @@ public class Conversation {
 
     public boolean hasParticipant(String userId) {
         return participantIds.contains(userId);
+    }
+
+    public boolean isHiddenFor(String userId) {
+        return getHiddenForUserIds().contains(userId);
+    }
+
+    public void hideFor(String userId) {
+        getHiddenForUserIds().add(userId);
+        touch();
+    }
+
+    public void unhideFor(String userId) {
+        getHiddenForUserIds().remove(userId);
+    }
+
+    public void unhideForParticipants() {
+        getHiddenForUserIds().removeAll(participantIds);
     }
 
     public void touch() {

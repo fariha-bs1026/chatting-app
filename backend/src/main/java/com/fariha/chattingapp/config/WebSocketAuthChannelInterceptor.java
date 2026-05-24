@@ -14,6 +14,8 @@ import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 
+import java.util.Map;
+
 @Component
 public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
     private final AuthService authService;
@@ -34,9 +36,11 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
         if (accessor != null && StompCommand.CONNECT.equals(accessor.getCommand())) {
-            UserAccount user = authService.authenticateAuthorizationHeader(accessor.getFirstNativeHeader(HttpHeaders.AUTHORIZATION))
+            String username = authService.authenticateAuthorizationHeader(accessor.getFirstNativeHeader(HttpHeaders.AUTHORIZATION))
+                    .map(UserAccount::getUsername)
+                    .or(() -> usernameFromHandshake(accessor))
                     .orElseThrow(() -> new AccessDeniedException("Invalid WebSocket token"));
-            accessor.setUser(new StompPrincipal(user.getUsername()));
+            accessor.setUser(new StompPrincipal(username));
         }
         if (accessor != null && StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
             authorizeSubscription(accessor);
@@ -45,7 +49,18 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
     }
 
     private void authorizeSubscription(StompHeaderAccessor accessor) {
-        String conversationId = extractConversationId(accessor.getDestination());
+        String destination = accessor.getDestination();
+        if (destination != null && destination.startsWith("/user/")) {
+            if (accessor.getUser() == null) {
+                throw new AccessDeniedException("WebSocket subscription requires authentication");
+            }
+            if (!"/user/queue/conversations".equals(destination)) {
+                throw new AccessDeniedException("Unsupported user subscription");
+            }
+            return;
+        }
+
+        String conversationId = extractConversationId(destination);
         if (conversationId == null) {
             return;
         }
@@ -61,6 +76,17 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
         if (!participant) {
             throw new AccessDeniedException("You are not a participant in this conversation");
         }
+    }
+
+    private static java.util.Optional<String> usernameFromHandshake(StompHeaderAccessor accessor) {
+        Map<String, Object> attributes = accessor.getSessionAttributes();
+        if (attributes == null) {
+            return java.util.Optional.empty();
+        }
+        Object username = attributes.get(CookieAuthHandshakeInterceptor.USERNAME_ATTRIBUTE);
+        return username instanceof String value && !value.isBlank()
+                ? java.util.Optional.of(value)
+                : java.util.Optional.empty();
     }
 
     private static String extractConversationId(String destination) {

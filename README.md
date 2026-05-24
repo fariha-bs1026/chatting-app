@@ -31,6 +31,7 @@ The backend uses:
 - Spring Security with bearer tokens
 - Spring WebSocket + STOMP
 - Spring Data MongoDB
+- MinIO object storage for uploaded chat images
 - MongoDB Community Server at `mongodb://localhost:27017/chatting_app`
 
 Run:
@@ -67,6 +68,17 @@ mvn spring-boot:run
 
 Do not commit real SMS credentials into `application.properties`.
 
+Uploaded chat images are stored in MinIO. MongoDB stores only message metadata and the MinIO object key. The backend returns short-lived presigned URLs in message responses so the React app can render private images in the browser.
+
+Local MinIO defaults:
+
+- API endpoint for Spring Boot outside Docker: `http://localhost:9000`
+- Public browser endpoint: `http://localhost:9000`
+- Console: `http://localhost:9001`
+- Username: `minioadmin`
+- Password: `minioadmin`
+- Bucket: `chat-media`
+
 Additional local safeguards are enabled by default:
 
 - Mongo index creation for development.
@@ -76,7 +88,7 @@ Additional local safeguards are enabled by default:
 
 ## Docker Without MongoDB
 
-MongoDB is expected to keep running locally on your machine. The Docker setup only starts the backend and frontend.
+MongoDB is expected to keep running locally on your machine. The Docker setup starts the backend, frontend, and MinIO.
 
 ```powershell
 docker compose up --build
@@ -88,6 +100,7 @@ Docker URLs:
 
 - Frontend: `http://localhost:3000`
 - Backend: `http://localhost:8080`
+- MinIO console: `http://localhost:9001`
 - MongoDB connection from backend container: `mongodb://host.docker.internal:27017/chatting_app`
 
 ## Frontend
@@ -108,16 +121,20 @@ npm run dev
 - User search
 - Direct conversations
 - Group conversations
+- Delete/hide chats for the current user
 - WebSocket live messages
 - WebSocket topic authorization for conversation subscriptions
 - Message history
 - Cursor-style message pagination
 - Message types: `TEXT`, `IMAGE`, `FILE`
-- Asset URL support
+- MinIO-backed image upload
+- Inline image rendering with presigned media URLs
 - Message status: `SENT`, `DELIVERED`, `READ`
 - Online/last-seen presence
 - OTP resend cooldown and daily SMS request limit
 - Hashed auth-token storage
+- Request validation with localized validation message bundles
+- Swagger/OpenAPI docs at `http://localhost:8080/swagger-ui/index.html`
 
 ## Verification
 

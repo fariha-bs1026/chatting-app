@@ -7,20 +7,20 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record RegisterRequest(
-        @NotBlank
-        @Pattern(regexp = "^[a-zA-Z0-9_.-]{3,50}$", message = "Username must be 3-50 characters and contain only letters, numbers, dot, dash, or underscore")
+        @NotBlank(message = "{auth.username.required}")
+        @Pattern(regexp = "^[a-zA-Z0-9_.-]{3,50}$", message = "{auth.username.invalid}")
         String username,
 
-        @NotBlank
-        @Size(min = 2, max = 120)
+        @NotBlank(message = "{auth.display-name.required}")
+        @Size(min = 2, max = 120, message = "{auth.display-name.size}")
         String displayName,
 
-        @NotBlank
-        @Pattern(regexp = "^\\+[1-9]\\d{7,14}$", message = "Phone number must use E.164 format, for example +8801712345678")
+        @NotBlank(message = "{auth.phone.required}")
+        @Pattern(regexp = "^\\+[1-9]\\d{7,14}$", message = "{auth.phone.invalid}")
         String phoneNumber,
 
-        @NotBlank
-        @Size(min = 6, max = 100)
+        @NotBlank(message = "{auth.password.required}")
+        @Size(min = 6, max = 100, message = "{auth.password.size}")
         String password
 ) {
 }

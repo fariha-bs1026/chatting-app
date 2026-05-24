@@ -18,7 +18,9 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class AuthService {
@@ -29,12 +31,16 @@ public class AuthService {
     private final RegistrationVerificationRepository verificationRepository;
     private final PasswordEncoder passwordEncoder;
     private final SmsSender smsSender;
+    private final MediaStorageService mediaStorageService;
     private final long tokenHours;
     private final long otpMinutes;
     private final long resendCooldownSeconds;
     private final int dailyRequestLimit;
     private final int maxAttempts;
     private final boolean directRegistrationEnabled;
+    private final int loginMaxAttempts;
+    private final long loginLockSeconds;
+    private final Map<String, LoginAttemptWindow> loginAttempts = new ConcurrentHashMap<>();
 
     public AuthService(
             UserAccountRepository userRepository,
@@ -42,24 +48,30 @@ public class AuthService {
             RegistrationVerificationRepository verificationRepository,
             PasswordEncoder passwordEncoder,
             SmsSender smsSender,
-            @Value("${app.auth.token-hours:168}") long tokenHours,
+            MediaStorageService mediaStorageService,
+            @Value("${app.auth.token-hours:2}") long tokenHours,
             @Value("${app.verification.otp-minutes:10}") long otpMinutes,
             @Value("${app.verification.resend-cooldown-seconds:60}") long resendCooldownSeconds,
             @Value("${app.verification.daily-limit:10}") int dailyRequestLimit,
             @Value("${app.verification.max-attempts:5}") int maxAttempts,
-            @Value("${app.auth.direct-registration-enabled:false}") boolean directRegistrationEnabled
+            @Value("${app.auth.direct-registration-enabled:false}") boolean directRegistrationEnabled,
+            @Value("${app.auth.login-max-attempts:5}") int loginMaxAttempts,
+            @Value("${app.auth.login-lock-seconds:300}") long loginLockSeconds
     ) {
         this.userRepository = userRepository;
         this.tokenRepository = tokenRepository;
         this.verificationRepository = verificationRepository;
         this.passwordEncoder = passwordEncoder;
         this.smsSender = smsSender;
+        this.mediaStorageService = mediaStorageService;
         this.tokenHours = tokenHours;
         this.otpMinutes = otpMinutes;
         this.resendCooldownSeconds = resendCooldownSeconds;
         this.dailyRequestLimit = dailyRequestLimit;
         this.maxAttempts = maxAttempts;
         this.directRegistrationEnabled = directRegistrationEnabled;
+        this.loginMaxAttempts = loginMaxAttempts;
+        this.loginLockSeconds = loginLockSeconds;
     }
 
     public AuthResponse register(RegisterRequest request) {
@@ -172,13 +184,17 @@ public class AuthService {
     }
 
     public AuthResponse login(LoginRequest request) {
-        UserAccount user = userRepository.findByUsernameIgnoreCase(normalizeUsername(request.username()))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password"));
+        String username = normalizeUsername(request.username());
+        enforceLoginThrottle(username);
+        Optional<UserAccount> account = userRepository.findByUsernameIgnoreCase(username);
 
-        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+        if (account.isEmpty() || !passwordEncoder.matches(request.password(), account.get().getPasswordHash())) {
+            recordFailedLogin(username);
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password");
         }
 
+        UserAccount user = account.get();
+        loginAttempts.remove(username);
         user.setOnline(true);
         user.setLastSeenAt(Instant.now());
         return issueToken(userRepository.save(user));
@@ -189,13 +205,21 @@ public class AuthService {
                 .flatMap(this::authenticateToken);
     }
 
+    public Optional<String> bearerToken(String authorizationHeader) {
+        return extractBearerToken(authorizationHeader);
+    }
+
     public Optional<UserAccount> authenticateToken(String token) {
         return tokenRepository.findByTokenHashAndExpiresAtAfter(hashToken(token), Instant.now())
                 .flatMap(authToken -> userRepository.findById(authToken.getUserId()));
     }
 
     public void logout(String authorizationHeader) {
-        extractBearerToken(authorizationHeader).ifPresent(token -> tokenRepository.findByTokenHash(hashToken(token))
+        extractBearerToken(authorizationHeader).ifPresent(this::logoutToken);
+    }
+
+    public void logoutToken(String token) {
+        tokenRepository.findByTokenHash(hashToken(token))
                 .ifPresent(authToken -> {
                     userRepository.findById(authToken.getUserId()).ifPresent(user -> {
                         user.setOnline(false);
@@ -203,14 +227,25 @@ public class AuthService {
                         userRepository.save(user);
                     });
                     tokenRepository.deleteByTokenHash(authToken.getTokenHash());
-                }));
+                });
+    }
+
+    public long tokenMaxAgeSeconds() {
+        return tokenHours * 3600;
     }
 
     private AuthResponse issueToken(UserAccount user) {
         String token = generateToken();
         Instant expiresAt = Instant.now().plus(tokenHours, ChronoUnit.HOURS);
         tokenRepository.save(new AuthToken(hashToken(token), user.getId(), expiresAt));
-        return new AuthResponse(token, UserDto.from(user));
+        return new AuthResponse(token, CurrentUserDto.from(user, resolveAvatarUrl(user)));
+    }
+
+    private String resolveAvatarUrl(UserAccount user) {
+        if (user.getAvatarKey() == null || user.getAvatarKey().isBlank()) {
+            return user.getAvatarUrl();
+        }
+        return mediaStorageService.createReadUrl(user.getAvatarKey());
     }
 
     private void enforceVerificationLimits(String username, String phoneNumber, Instant now) {
@@ -236,6 +271,36 @@ public class AuthService {
             verification.setUsed(true);
             verificationRepository.save(verification);
         });
+    }
+
+    private void enforceLoginThrottle(String username) {
+        LoginAttemptWindow attempt = loginAttempts.get(username);
+        if (attempt == null) {
+            return;
+        }
+
+        Instant now = Instant.now();
+        if (attempt.lockedUntil() != null && attempt.lockedUntil().isAfter(now)) {
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "Too many failed login attempts");
+        }
+        if (attempt.windowExpiresAt().isBefore(now)) {
+            loginAttempts.remove(username);
+        }
+    }
+
+    private void recordFailedLogin(String username) {
+        Instant now = Instant.now();
+        loginAttempts.compute(username, (key, current) -> {
+            LoginAttemptWindow active = current == null || current.windowExpiresAt().isBefore(now)
+                    ? new LoginAttemptWindow(0, now.plus(loginLockSeconds, ChronoUnit.SECONDS), null)
+                    : current;
+            int attempts = active.attempts() + 1;
+            Instant lockedUntil = attempts >= loginMaxAttempts ? now.plus(loginLockSeconds, ChronoUnit.SECONDS) : null;
+            return new LoginAttemptWindow(attempts, active.windowExpiresAt(), lockedUntil);
+        });
+    }
+
+    private record LoginAttemptWindow(int attempts, Instant windowExpiresAt, Instant lockedUntil) {
     }
 
     private static Optional<String> extractBearerToken(String authorizationHeader) {

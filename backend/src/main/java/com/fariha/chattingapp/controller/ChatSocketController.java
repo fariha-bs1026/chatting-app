@@ -19,15 +19,18 @@ public class ChatSocketController {
     private final ChatService chatService;
     private final UserAccountRepository userRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final ConversationUpdateBroadcaster conversationUpdateBroadcaster;
 
     public ChatSocketController(
             ChatService chatService,
             UserAccountRepository userRepository,
-            SimpMessagingTemplate messagingTemplate
+            SimpMessagingTemplate messagingTemplate,
+            ConversationUpdateBroadcaster conversationUpdateBroadcaster
     ) {
         this.chatService = chatService;
         this.userRepository = userRepository;
         this.messagingTemplate = messagingTemplate;
+        this.conversationUpdateBroadcaster = conversationUpdateBroadcaster;
     }
 
     @MessageMapping("/chat.send")
@@ -36,6 +39,7 @@ public class ChatSocketController {
                 .orElseThrow();
         MessageDto message = chatService.sendMessage(request, sender);
         messagingTemplate.convertAndSend("/topic/conversations/" + request.conversationId(), message);
+        conversationUpdateBroadcaster.broadcastConversation(message.conversationId());
     }
 
     @MessageMapping("/message.status")
@@ -49,12 +53,17 @@ public class ChatSocketController {
         );
         messagingTemplate.convertAndSend(
                 "/topic/conversations/" + message.conversationId() + "/status",
-                new MessageStatusEvent(message.id(), message.conversationId(), message.status())
+                new MessageStatusEvent(
+                        message.id(),
+                        message.conversationId(),
+                        chatService.messageAggregateStatus(message.id()).name()
+                )
         );
+        conversationUpdateBroadcaster.broadcastConversation(message.conversationId());
     }
 
     @MessageMapping("/chat.typing")
-    public void typing(@Payload TypingEvent event, Principal principal) {
+    public void typing(@Valid @Payload TypingEvent event, Principal principal) {
         UserAccount user = userRepository.findByUsernameIgnoreCase(principal.getName())
                 .orElseThrow();
         if (!chatService.isParticipant(event.conversationId(), user.getId())) {

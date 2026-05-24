@@ -13,6 +13,7 @@ public record ConversationDto(
         String description,
         List<UserDto> participants,
         MessageDto lastMessage,
+        long unreadCount,
         Instant createdAt,
         Instant updatedAt
 ) {

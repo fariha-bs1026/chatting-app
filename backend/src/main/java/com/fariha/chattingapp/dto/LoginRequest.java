@@ -5,7 +5,7 @@ import com.fariha.chattingapp.entity.*;
 import jakarta.validation.constraints.NotBlank;
 
 public record LoginRequest(
-        @NotBlank String username,
-        @NotBlank String password
+        @NotBlank(message = "{auth.username.required}") String username,
+        @NotBlank(message = "{auth.password.required}") String password
 ) {
 }

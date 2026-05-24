@@ -24,9 +24,11 @@ Authentication uses a bearer token returned by login/register. Tokens are stored
 | `POST` | `/conversations/direct` | Start or fetch a one-to-one conversation |
 | `POST` | `/conversations/groups` | Create a group conversation |
 | `GET` | `/conversations/{conversationId}` | Read conversation details |
+| `DELETE` | `/conversations/{conversationId}` | Delete/hide a chat for the current user |
 | `GET` | `/conversations/{conversationId}/messages?limit=50&before=` | Load paginated message history |
 | `POST` | `/conversations/{conversationId}/messages` | Send message over REST fallback |
 | `PATCH` | `/messages/{messageId}/status` | Mark message `SENT`, `DELIVERED`, or `READ` |
+| `POST` | `/media` | Upload an authenticated image file to MinIO |
 
 ### Message Shape
 
@@ -42,7 +44,9 @@ Authentication uses a bearer token returned by login/register. Tokens are stored
     "lastSeenAt": "2026-05-19T06:30:00Z"
   },
   "content": "Hi Emily",
+  "assetKey": null,
   "assetUrl": null,
+  "assetContentType": null,
   "type": "TEXT",
   "status": "SENT",
   "createdAt": "2026-05-19T06:31:00Z"
@@ -61,7 +65,13 @@ Authentication uses a bearer token returned by login/register. Tokens are stored
 
 Use `nextBefore` as the next `before` query parameter to load older messages.
 
-For image/video/document style messages, set `type` to `IMAGE` or `FILE` and include `assetUrl`. A real production app would add an upload service and object storage before sending the message event.
+For image messages, upload the file first:
+
+1. `POST /api/media` as `multipart/form-data` with field `file`.
+2. The backend validates image size/type, stores the bytes in MinIO, and returns `objectKey` plus a short-lived `assetUrl`.
+3. Send the chat message with `type: "IMAGE"` and `assetKey`.
+
+MongoDB stores the message metadata and MinIO object key. MinIO stores the actual image bytes. Message responses include a presigned `assetUrl` for browser rendering.
 
 ## WebSocket API
 

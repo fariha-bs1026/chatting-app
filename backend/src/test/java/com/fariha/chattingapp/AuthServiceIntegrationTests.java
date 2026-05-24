@@ -1,6 +1,7 @@
 package com.fariha.chattingapp;
 
 import com.fariha.chattingapp.dto.AuthResponse;
+import com.fariha.chattingapp.dto.LoginRequest;
 import com.fariha.chattingapp.dto.RegisterRequest;
 import com.fariha.chattingapp.dto.RegistrationStartResponse;
 import com.fariha.chattingapp.dto.VerifyRegistrationRequest;
@@ -96,6 +97,27 @@ class AuthServiceIntegrationTests {
         authService.startRegistration(request);
 
         assertThatThrownBy(() -> authService.startRegistration(request))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("429 TOO_MANY_REQUESTS");
+    }
+
+    @Test
+    void repeatedFailedLoginsAreRateLimited() {
+        RegistrationStartResponse start = authService.startRegistration(new RegisterRequest(
+                "login_limit",
+                "Login Limit",
+                "+8801744444444",
+                "secret123"
+        ));
+        authService.verifyRegistration(new VerifyRegistrationRequest(start.verificationId(), start.debugCode()));
+
+        for (int attempt = 0; attempt < 5; attempt++) {
+            assertThatThrownBy(() -> authService.login(new LoginRequest("login_limit", "wrong-password")))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("401 UNAUTHORIZED");
+        }
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest("login_limit", "wrong-password")))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("429 TOO_MANY_REQUESTS");
     }

@@ -1,8 +1,11 @@
+import { getApiLanguage } from './language';
+
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
 export const WS_URL = import.meta.env.VITE_WS_URL || 'http://localhost:8080/ws';
 
 export async function apiFetch(path, { token, body, headers, ...options } = {}) {
   const requestHeaders = {
+    'Accept-Language': getApiLanguage(),
     ...headers
   };
 
@@ -18,6 +21,7 @@ export async function apiFetch(path, { token, body, headers, ...options } = {}) 
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
+    credentials: 'include',
     headers: requestHeaders,
     body: requestBody
   });
@@ -27,11 +31,22 @@ export async function apiFetch(path, { token, body, headers, ...options } = {}) 
   }
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
+  const data = parseResponseBody(text);
 
   if (!response.ok) {
     throw new Error(data?.message || data?.error || 'Request failed');
   }
 
   return data;
+}
+
+function parseResponseBody(text) {
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { message: text };
+  }
 }
