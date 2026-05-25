@@ -1,7 +1,7 @@
 package com.fariha.chattingapp.config;
 
-import com.fariha.chattingapp.entity.*;
-import com.fariha.chattingapp.service.*;
+import com.fariha.chattingapp.entity.UserAccount;
+import com.fariha.chattingapp.service.AuthService;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -17,6 +17,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Optional;
 
 @Component
 public class TokenAuthenticationFilter extends OncePerRequestFilter {
@@ -42,16 +43,16 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    private java.util.Optional<UserAccount> authenticateCookie(HttpServletRequest request) {
+    private Optional<UserAccount> authenticateCookie(HttpServletRequest request) {
         if (request.getCookies() == null) {
-            return java.util.Optional.empty();
+            return Optional.empty();
         }
         for (Cookie cookie : request.getCookies()) {
             if (AUTH_COOKIE_NAME.equals(cookie.getName())) {
                 return authService.authenticateToken(cookie.getValue());
             }
         }
-        return java.util.Optional.empty();
+        return Optional.empty();
     }
 
     private void authenticate(UserAccount user) {

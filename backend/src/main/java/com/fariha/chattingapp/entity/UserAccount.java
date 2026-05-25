@@ -1,11 +1,17 @@
 package com.fariha.chattingapp.entity;
 
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Document(collection = "users")
 public class UserAccount {
     @Id
@@ -16,16 +22,18 @@ public class UserAccount {
 
     private String displayName;
     @Indexed(unique = true, sparse = true)
+    @Setter
     private String phoneNumber;
     private String passwordHash;
+    @Setter
     private String avatarUrl;
+    @Setter
     private String avatarKey;
     private Instant createdAt = Instant.now();
+    @Setter
     private Instant lastSeenAt;
+    @Setter
     private boolean online;
-
-    protected UserAccount() {
-    }
 
     public UserAccount(String username, String displayName, String passwordHash) {
         this.username = username;
@@ -34,67 +42,7 @@ public class UserAccount {
         this.lastSeenAt = Instant.now();
     }
 
-    public String getId() {
-        return id;
-    }
-
-    public String getUsername() {
-        return username;
-    }
-
-    public String getDisplayName() {
-        return displayName;
-    }
-
-    public String getPhoneNumber() {
-        return phoneNumber;
-    }
-
-    public String getPasswordHash() {
-        return passwordHash;
-    }
-
-    public String getAvatarUrl() {
-        return avatarUrl;
-    }
-
-    public String getAvatarKey() {
-        return avatarKey;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-
-    public Instant getLastSeenAt() {
-        return lastSeenAt;
-    }
-
-    public boolean isOnline() {
-        return online;
-    }
-
     public void setDisplayName(String displayName) {
         this.displayName = displayName;
-    }
-
-    public void setPhoneNumber(String phoneNumber) {
-        this.phoneNumber = phoneNumber;
-    }
-
-    public void setAvatarUrl(String avatarUrl) {
-        this.avatarUrl = avatarUrl;
-    }
-
-    public void setAvatarKey(String avatarKey) {
-        this.avatarKey = avatarKey;
-    }
-
-    public void setLastSeenAt(Instant lastSeenAt) {
-        this.lastSeenAt = lastSeenAt;
-    }
-
-    public void setOnline(boolean online) {
-        this.online = online;
     }
 }

@@ -147,6 +147,37 @@ class ChatServiceIntegrationTests {
     }
 
     @Test
+    void audioAndVideoMessagesKeepTheirMediaType() {
+        ConversationDto conversation = chatService.createDirectConversation(bob.getId(), alice);
+
+        MessageDto audio = chatService.sendMessage(
+                new SendMessageRequest(conversation.id(), "voice note", "AUDIO", null, "users/" + alice.getId() + "/voice.mp3"),
+                alice
+        );
+        MessageDto video = chatService.sendMessage(
+                new SendMessageRequest(conversation.id(), "clip", "VIDEO", null, "users/" + alice.getId() + "/clip.mp4"),
+                alice
+        );
+
+        assertThat(audio.type()).isEqualTo("AUDIO");
+        assertThat(audio.assetContentType()).isEqualTo("audio/mpeg");
+        assertThat(video.type()).isEqualTo("VIDEO");
+        assertThat(video.assetContentType()).isEqualTo("video/mp4");
+    }
+
+    @Test
+    void messageTypeMustMatchUploadedMediaType() {
+        ConversationDto conversation = chatService.createDirectConversation(bob.getId(), alice);
+
+        assertThatThrownBy(() -> chatService.sendMessage(
+                new SendMessageRequest(conversation.id(), "wrong type", "VIDEO", null, "users/" + alice.getId() + "/voice.mp3"),
+                alice
+        ))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("400 BAD_REQUEST");
+    }
+
+    @Test
     void deletingConversationHidesItOnlyForCurrentUser() {
         ConversationDto conversation = chatService.createDirectConversation(bob.getId(), alice);
 

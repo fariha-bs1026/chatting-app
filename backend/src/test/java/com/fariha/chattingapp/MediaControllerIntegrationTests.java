@@ -56,9 +56,9 @@ class MediaControllerIntegrationTests {
     }
 
     @Test
-    void authenticatedUserCanUploadImage() throws Exception {
+    void authenticatedUserCanUploadMedia() throws Exception {
         String token = token();
-        when(mediaStorageService.uploadImage(any(MultipartFile.class), any()))
+        when(mediaStorageService.uploadMedia(any(MultipartFile.class), any()))
                 .thenReturn(new MediaUploadResponse(
                         "users/user-id/2026/05/image.png",
                         "http://localhost:9000/chat-media/users/user-id/2026/05/image.png",

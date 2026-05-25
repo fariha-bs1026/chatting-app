@@ -1,10 +1,13 @@
 package com.fariha.chattingapp.controller;
 
-import com.fariha.chattingapp.dto.*;
-import com.fariha.chattingapp.entity.*;
-import com.fariha.chattingapp.repository.*;
-import com.fariha.chattingapp.service.*;
-
+import com.fariha.chattingapp.config.WebSocketDestinations;
+import com.fariha.chattingapp.dto.MessageDeletionResponse;
+import com.fariha.chattingapp.dto.MessageDto;
+import com.fariha.chattingapp.dto.MessageStatusEvent;
+import com.fariha.chattingapp.dto.MessageStatusRequest;
+import com.fariha.chattingapp.entity.UserAccount;
+import com.fariha.chattingapp.service.ChatService;
+import com.fariha.chattingapp.service.ConversationUpdateBroadcaster;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -50,7 +53,7 @@ public class MessageController {
                 currentUser
         );
         messagingTemplate.convertAndSend(
-                "/topic/conversations/" + message.conversationId() + "/status",
+                WebSocketDestinations.conversationStatus(message.conversationId()),
                 new MessageStatusEvent(
                         message.id(),
                         message.conversationId(),
@@ -70,7 +73,7 @@ public class MessageController {
         String normalizedScope = scope.trim().toUpperCase(Locale.ROOT);
         if ("EVERYONE".equals(normalizedScope)) {
             MessageDto message = chatService.deleteMessageForEveryone(messageId, currentUser);
-            messagingTemplate.convertAndSend("/topic/conversations/" + message.conversationId(), message);
+            messagingTemplate.convertAndSend(WebSocketDestinations.conversation(message.conversationId()), message);
             conversationUpdateBroadcaster.broadcastConversation(message.conversationId());
             return ResponseEntity.ok(message);
         }

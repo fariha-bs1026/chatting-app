@@ -1,337 +1,76 @@
 # ChatFlow Architecture Review
 
-Last updated: May 21, 2026
+Last updated: May 25, 2026
 
 ## Summary
 
-ChatFlow is in a good MVP state for a dummy WhatsApp-style project. The current stack is sensible:
-
-- Spring Boot API
-- React frontend
-- MongoDB persistence
-- WebSocket/STOMP realtime messaging
-- SMS-style registration with dummy and Twilio providers
-
-The main remaining work is not about making the UI fancier. The important improvements are around security boundaries, data integrity, scaling behavior, contact modeling, and test coverage.
-
-## Implemented On May 21, 2026
-
-- WebSocket conversation-topic subscription authorization.
-- Participant validation for typing events.
-- MongoDB auto-index creation for local development.
-- Auth-token hashing before MongoDB storage.
-- TTL index support for expired auth tokens.
-- OTP resend cooldown and daily request limit.
-- Direct-conversation uniqueness key.
-- Cursor-style message pagination.
-- Frontend "Load older messages" support.
-- Backend integration tests for auth and chat rules.
-- Docker setup for backend and frontend only.
-- Frontend auth/reusable UI component split.
-
-## Priority 1: WebSocket Authorization
-
-Status after May 21: baseline conversation-topic authorization is implemented. Keep this section as the design rule for future WebSocket topics.
-
-Current issue:
-
-- The WebSocket connection checks the token during `CONNECT`.
-- After connection, subscriptions are not strongly checked per conversation.
-- A user could potentially subscribe to `/topic/conversations/{conversationId}` if they know or guess the id.
-- Typing events are broadcast without checking that the sender belongs to the conversation.
-
-Recommended improvement:
-
-- Validate `SUBSCRIBE` frames in `WebSocketAuthChannelInterceptor`.
-- Check that the authenticated user is a participant of the conversation topic.
-- Validate `/app/chat.typing` the same way message sending is validated.
-- Consider user-specific queues instead of public conversation topics.
-
-Why it matters:
-
-Realtime chat privacy depends on topic-level authorization, not only login.
-
-## Priority 2: MongoDB Indexes And Data Integrity
-
-Status after May 21: local auto-index creation and direct-conversation uniqueness are implemented. Production still needs explicit migration/index management.
-
-Current issue:
-
-- `@Indexed` is used for usernames, phone numbers, participant ids, and OTP expiry.
-- The app does not explicitly enable Mongo auto-index creation in config.
-- In production, relying on annotation-driven index creation is not enough.
-
-Recommended improvement:
-
-- For local dev, add:
-
-```properties
-spring.data.mongodb.auto-index-creation=true
-```
-
-- For serious usage, create indexes through a migration/setup script.
-- Add a direct-conversation uniqueness strategy so two users cannot accidentally get duplicate direct chats.
-- Add TTL cleanup for expired auth tokens as well as OTP records.
-
-Why it matters:
-
-Without reliable indexes, duplicate users/phones can appear and expired verification records may stay longer than expected.
-
-## Priority 3: SMS Verification Abuse Protection
-
-Status after May 21: basic resend cooldown and daily request limits are implemented. A production deployment still needs distributed rate limiting.
-
-Current issue:
-
-- The SMS flow works.
-- Dummy mode works for local testing.
-- Twilio mode is wired for real SMS.
-- But OTP request abuse is not protected enough yet.
-
-Recommended improvement:
-
-- Add resend cooldown per phone number.
-- Add per-IP and per-phone rate limits.
-- Add daily SMS caps.
-- Track failed verification attempts across resend cycles.
-- Hide whether a phone number is registered in public responses if privacy becomes important.
-- Add provider failure handling for Twilio errors.
-
-Why it matters:
-
-SMS costs money and can be abused quickly.
-
-## Priority 4: Token And Session Hardening
-
-Status after May 21: auth tokens are stored as hashes and have TTL index support. Refresh-token or cookie-session work is still open.
-
-Current issue:
-
-- Bearer tokens are stored directly in MongoDB.
-- The frontend stores the auth response in `localStorage`.
-- There is no refresh-token rotation.
-- Expired auth tokens are checked logically but not automatically removed by TTL.
-
-Recommended improvement:
-
-- Store only hashed tokens in MongoDB.
-- Add TTL index for expired auth tokens.
-- Add refresh tokens if sessions need to survive longer.
-- For web production, consider HttpOnly/Secure cookies instead of localStorage.
-- Add logout-all-devices support.
-
-Why it matters:
-
-The current token system is okay for an MVP, but not for a production chat product.
-
-## Priority 5: Message Status And Read Receipts
-
-Status after May 21: the sender can no longer mark their own message as read, and status cannot move backward. Per-recipient receipt storage is still open.
-
-Current issue:
-
-- A message has one status: `SENT`, `DELIVERED`, or `READ`.
-- Any participant can update the status of a message.
-- Group chats need per-recipient status, not one global status.
-
-Recommended improvement:
-
-- Create a message receipt model:
-  - message id
-  - recipient user id
-  - delivered at
-  - read at
-- Only receivers should mark messages as delivered/read.
-- Status should move forward only, not backward.
-- For group messages, calculate aggregate display state from all receipts.
-
-Why it matters:
-
-WhatsApp-style ticks are recipient-specific, especially in groups.
-
-## Priority 6: Message Pagination And Conversation Performance
-
-Status after May 21: cursor-style message pagination is implemented. Denormalized unread counts and last-message summaries are still open.
-
-Current issue:
-
-- Message history loads all messages in a conversation.
-- Conversation listing calculates last message dynamically.
-
-Recommended improvement:
-
-- Add cursor pagination for messages:
-  - `beforeMessageId`
-  - `beforeCreatedAt`
-  - `limit`
-- Store last message summary on the conversation document.
-- Store unread count per user/conversation.
-- Add indexes for:
-  - `conversationId + createdAt`
-  - `participantIds + updatedAt`
-
-Why it matters:
-
-Chat apps become slow quickly if every conversation loads full history or repeatedly looks up the latest message.
-
-## Priority 7: Contacts Model
-
-Current issue:
-
-- The frontend now separates Contacts and Search.
-- Contacts currently come from existing direct conversations.
-- Search still uses global username/display-name search.
-
-Recommended improvement:
-
-- Add a real contacts collection.
-- Support contact import by phone number.
-- Match phone numbers to registered users.
-- Add invite state for phone numbers that are not registered.
-- Add privacy settings:
-  - who can find me
-  - who can see my online status
-  - who can see my last seen
-- Add blocking.
-
-Why it matters:
-
-WhatsApp is contact-first. User search alone is more like Slack/Discord than WhatsApp.
-
-## Priority 8: Frontend Structure
-
-Status after May 21: the auth screen and reusable visual components were split from `App.jsx`. The chat screen still needs deeper component/hook extraction.
-
-Current issue:
-
-- Most frontend logic lives in `App.jsx`.
-- This is fine for an MVP, but it will become hard to manage.
-
-Recommended improvement:
-
-Split the frontend into:
-
-```text
-frontend/src/
-  api/
-    authApi.js
-    conversationApi.js
-    userApi.js
-  components/
-    AuthView.jsx
-    Sidebar.jsx
-    ChatPane.jsx
-    MessageList.jsx
-    Composer.jsx
-    ThemeToggle.jsx
-  hooks/
-    useAuth.js
-    useChatSocket.js
-    useTheme.js
-  state/
-    authStorage.js
-```
-
-Also consider adding:
-
-- React Router if multiple pages are added.
-- TanStack Query if API state grows.
-- A form library only if forms become complex.
-
-Why it matters:
-
-The current file is still workable, but calls, media upload, profile editing, and contacts will make it too large.
-
-## Priority 9: Testing
-
-Status after May 21: backend integration tests were added for SMS registration, token hashing, message pagination, status permissions, and direct conversation reuse. Frontend tests are still open.
-
-Current issue:
-
-- Backend has only a context-load test.
-- Frontend has no test coverage.
-
-Recommended backend tests:
-
-- Register start returns dummy OTP in dummy mode.
-- Register verify creates user and token.
-- Invalid OTP increments attempts.
-- Expired OTP is rejected.
-- Duplicate phone number is rejected.
-- Direct conversation requires valid users.
-- Non-participant cannot read/send messages.
-- WebSocket subscribe is rejected for non-participants after the authorization fix.
-
-Recommended frontend tests:
-
-- Register flow shows SMS code step.
-- Login stores auth state.
-- People tab Contacts/Search behavior.
-- Message sending clears composer.
-- Theme toggle persists selection.
-
-Why it matters:
-
-Chat logic has many edge cases. Tests will help avoid breaking existing flows while adding features.
-
-## Priority 10: Deployment And Operations
-
-Status after May 21: backend/frontend Dockerfiles and Compose were added without MongoDB. CI and production profiles are still open.
-
-Current issue:
-
-- The app is local-dev focused.
-- MongoDB URI and CORS are simple local settings.
-
-Recommended improvement:
-
-- Add Docker Compose:
-  - MongoDB
-  - backend
-  - frontend
-- Add backend `.env.example`.
-- Add frontend `.env.example`.
-- Add Spring profiles:
-  - `local`
-  - `test`
-  - `prod`
-- Add CI:
-  - backend tests
-  - frontend build
-- Add structured logging.
-- Add readiness/health checks.
-
-Why it matters:
-
-This makes the project easier to resume, share, deploy, and debug.
-
-## Suggested Work Order For Tomorrow
-
-1. Add profile editing and avatar upload.
-2. Add proper media upload instead of manual asset URLs.
-3. Add a real contacts collection and phone-number matching.
-4. Add frontend typing indicators using the existing backend endpoint.
-5. Add read-receipt behavior when a conversation is opened.
-6. Add refresh tokens or secure cookie sessions.
-7. Expand frontend tests.
-8. Add production deployment configuration.
-
-## Lower Priority Notes
-
-Lombok:
-
-- Lombok is fine for entities and constructors.
-- Keep Java records for DTOs.
-- It is useful, but not urgent compared with authorization, indexes, OTP protection, and pagination.
-
-Flutter:
-
-- A Flutter app is possible using the same backend.
-- It is better to stabilize the web API first.
-- Once auth, conversations, messages, contacts, and media endpoints are stable, Flutter can reuse them.
-
-Production readiness:
-
-- This is not production-ready yet.
-- It is a good MVP foundation.
-- The biggest production blockers are WebSocket authorization, SMS abuse protection, token hardening, and proper contact modeling.
+The project is now a credible chat MVP: the backend boundaries are mostly clear, realtime authorization exists, media is stored outside MongoDB, and the frontend covers the core daily chat flows. The largest architectural risk is no longer a missing single feature; it is frontend growth around `App.jsx`, production hardening, and missing contact/session/notification infrastructure.
+
+## What Was Improved Today
+
+- Added audio and video media upload support on top of the existing MinIO flow.
+- Added direct audio/video call signaling over WebSocket.
+- Added frontend call controls and WebRTC media handling.
+- Added delete for me, delete for everyone, and temporary message flows.
+- Added profile update, avatar upload, and avatar delete flows.
+- Added frontend typing indicator support using the existing backend typing endpoint.
+- Added Lombok to reduce backend entity boilerplate.
+- Cleaned wildcard imports in backend production code.
+- Removed unsafe/questionable compound indexes involving hidden array fields.
+- Added verification lookup indexes for OTP rate-limit and lookup paths.
+- Added focused backend unit tests for WebSocket typing/call signaling.
+- Added frontend unit/component tests with Vitest and React Testing Library.
+- Added frontend coverage script with 40% global coverage thresholds.
+- Upgraded Vite to a non-vulnerable line and verified `npm audit` reports 0 vulnerabilities.
+- Verified backend and frontend after the changes.
+
+## Structure Assessment
+
+Backend:
+
+- The package structure is appropriate for the current size: controller, service, repository, entity, dto, config.
+- DTOs as Java records are a good fit and should stay.
+- Entities now use Lombok for repetitive getters/constructors while keeping domain methods explicit.
+- `ChatService` is becoming large. The next backend cleanup should split media-message validation, receipt logic, and conversation projection into smaller collaborators.
+
+Frontend:
+
+- The app works, but `frontend/src/App.jsx` is too large for the number of features it now owns.
+- The next structural improvement should extract `Sidebar`, `ChatPane`, `MessageList`, `Composer`, `ProfileEditor`, `CallPanel`, and socket hooks.
+- Frontend errors should continue to route through the existing central error mapping/helper pattern.
+
+Database:
+
+- MongoDB is acceptable for this MVP.
+- Current indexes cover usernames, phone numbers, auth token expiry, OTP expiry/lookups, conversation participant listing, message history, and receipts.
+- Production should use explicit migration/index management rather than relying only on annotation-driven creation.
+- Last-message and unread-count calculations are still dynamic; denormalizing them will matter when data grows.
+
+Security:
+
+- Strong wins: hashed auth tokens, HttpOnly cookie, participant checks for conversation topics, media ownership checks, request validation, localized validation messages.
+- Remaining risks: no refresh-token rotation, no logout-all-devices, no device/session model, no push notification auth model, no end-to-end encryption, no distributed rate limiting.
+- WebRTC currently uses a public STUN server. Production calls need configurable STUN/TURN servers.
+
+## Feature Candidates Still Worth Implementing
+
+- Real contacts collection with phone-number matching.
+- Blocking and privacy controls for profile photo, online state, and last seen.
+- Push notifications for new messages and missed calls.
+- Message edit, reactions, replies, and forwarding.
+- Conversation search.
+- Archived, muted, and pinned chats.
+- Call history and missed call records.
+- TURN server configuration and call failure handling.
+- Password reset and optional email verification.
+- Multi-device sessions and logout all devices.
+- Broader frontend integration tests for full chat/call workflows.
+- CI pipeline for backend tests and frontend build.
+
+## Recommended Next Implementation Order
+
+1. Split `App.jsx` into components/hooks before adding more chat UI.
+2. Broaden frontend tests around profile updates, delete flows, typing, media uploads, and call failure paths.
+3. Add contacts/blocking/privacy because it changes conversation visibility rules.
+4. Add TURN configuration and call history for calls.
+5. Add CI, production profiles, index migrations, and secrets handling.

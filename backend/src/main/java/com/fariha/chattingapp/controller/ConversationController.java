@@ -1,10 +1,16 @@
 package com.fariha.chattingapp.controller;
 
-import com.fariha.chattingapp.dto.*;
-import com.fariha.chattingapp.entity.*;
-import com.fariha.chattingapp.repository.*;
-import com.fariha.chattingapp.service.*;
-
+import com.fariha.chattingapp.config.WebSocketDestinations;
+import com.fariha.chattingapp.dto.ConversationDto;
+import com.fariha.chattingapp.dto.ConversationMessageRequest;
+import com.fariha.chattingapp.dto.CreateGroupRequest;
+import com.fariha.chattingapp.dto.DirectConversationRequest;
+import com.fariha.chattingapp.dto.MessageDto;
+import com.fariha.chattingapp.dto.MessagePageResponse;
+import com.fariha.chattingapp.dto.SendMessageRequest;
+import com.fariha.chattingapp.entity.UserAccount;
+import com.fariha.chattingapp.service.ChatService;
+import com.fariha.chattingapp.service.ConversationUpdateBroadcaster;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -112,7 +118,7 @@ public class ConversationController {
                 ),
                 currentUser
         );
-        messagingTemplate.convertAndSend("/topic/conversations/" + conversationId, message);
+        messagingTemplate.convertAndSend(WebSocketDestinations.conversation(conversationId), message);
         conversationUpdateBroadcaster.broadcastConversation(conversationId);
         return message;
     }

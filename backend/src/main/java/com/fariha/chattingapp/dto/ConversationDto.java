@@ -1,8 +1,5 @@
 package com.fariha.chattingapp.dto;
 
-import com.fariha.chattingapp.entity.*;
-
-
 import java.time.Instant;
 import java.util.List;
 

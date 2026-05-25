@@ -1,8 +1,9 @@
 package com.fariha.chattingapp.config;
 
-import com.fariha.chattingapp.entity.*;
-import com.fariha.chattingapp.repository.*;
-import com.fariha.chattingapp.service.*;
+import com.fariha.chattingapp.entity.UserAccount;
+import com.fariha.chattingapp.repository.ConversationRepository;
+import com.fariha.chattingapp.repository.UserAccountRepository;
+import com.fariha.chattingapp.service.AuthService;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.messaging.Message;
@@ -15,6 +16,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
+import java.util.Optional;
 
 @Component
 public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
@@ -50,11 +52,11 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 
     private void authorizeSubscription(StompHeaderAccessor accessor) {
         String destination = accessor.getDestination();
-        if (destination != null && destination.startsWith("/user/")) {
+        if (destination != null && destination.startsWith(WebSocketDestinations.USER_PREFIX + "/")) {
             if (accessor.getUser() == null) {
                 throw new AccessDeniedException("WebSocket subscription requires authentication");
             }
-            if (!"/user/queue/conversations".equals(destination)) {
+            if (!WebSocketDestinations.USER_CONVERSATIONS_DESTINATION.equals(destination)) {
                 throw new AccessDeniedException("Unsupported user subscription");
             }
             return;
@@ -78,19 +80,19 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
         }
     }
 
-    private static java.util.Optional<String> usernameFromHandshake(StompHeaderAccessor accessor) {
+    private static Optional<String> usernameFromHandshake(StompHeaderAccessor accessor) {
         Map<String, Object> attributes = accessor.getSessionAttributes();
         if (attributes == null) {
-            return java.util.Optional.empty();
+            return Optional.empty();
         }
         Object username = attributes.get(CookieAuthHandshakeInterceptor.USERNAME_ATTRIBUTE);
         return username instanceof String value && !value.isBlank()
-                ? java.util.Optional.of(value)
-                : java.util.Optional.empty();
+                ? Optional.of(value)
+                : Optional.empty();
     }
 
     private static String extractConversationId(String destination) {
-        String prefix = "/topic/conversations/";
+        String prefix = WebSocketDestinations.CONVERSATION_TOPIC_PREFIX;
         if (destination == null || !destination.startsWith(prefix)) {
             return null;
         }

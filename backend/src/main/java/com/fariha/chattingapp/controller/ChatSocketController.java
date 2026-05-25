@@ -1,9 +1,15 @@
 package com.fariha.chattingapp.controller;
 
-import com.fariha.chattingapp.dto.*;
-import com.fariha.chattingapp.entity.*;
-import com.fariha.chattingapp.repository.*;
-import com.fariha.chattingapp.service.*;
+import com.fariha.chattingapp.config.WebSocketDestinations;
+import com.fariha.chattingapp.dto.CallSignalEvent;
+import com.fariha.chattingapp.dto.MessageDto;
+import com.fariha.chattingapp.dto.MessageStatusEvent;
+import com.fariha.chattingapp.dto.SendMessageRequest;
+import com.fariha.chattingapp.dto.TypingEvent;
+import com.fariha.chattingapp.entity.UserAccount;
+import com.fariha.chattingapp.repository.UserAccountRepository;
+import com.fariha.chattingapp.service.ChatService;
+import com.fariha.chattingapp.service.ConversationUpdateBroadcaster;
 
 import jakarta.validation.Valid;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -38,7 +44,7 @@ public class ChatSocketController {
         UserAccount sender = userRepository.findByUsernameIgnoreCase(principal.getName())
                 .orElseThrow();
         MessageDto message = chatService.sendMessage(request, sender);
-        messagingTemplate.convertAndSend("/topic/conversations/" + request.conversationId(), message);
+        messagingTemplate.convertAndSend(WebSocketDestinations.conversation(request.conversationId()), message);
         conversationUpdateBroadcaster.broadcastConversation(message.conversationId());
     }
 
@@ -52,7 +58,7 @@ public class ChatSocketController {
                 user
         );
         messagingTemplate.convertAndSend(
-                "/topic/conversations/" + message.conversationId() + "/status",
+                WebSocketDestinations.conversationStatus(message.conversationId()),
                 new MessageStatusEvent(
                         message.id(),
                         message.conversationId(),
@@ -70,6 +76,19 @@ public class ChatSocketController {
             throw new AccessDeniedException("You are not a participant in this conversation");
         }
         TypingEvent outgoing = new TypingEvent(event.conversationId(), principal.getName(), event.typing());
-        messagingTemplate.convertAndSend("/topic/conversations/" + event.conversationId() + "/typing", outgoing);
+        messagingTemplate.convertAndSend(WebSocketDestinations.conversationTyping(event.conversationId()), outgoing);
+    }
+
+    @MessageMapping("/call.signal")
+    public void callSignal(@Valid @Payload CallSignalEvent event, Principal principal) {
+        UserAccount user = userRepository.findByUsernameIgnoreCase(principal.getName())
+                .orElseThrow();
+        if (!chatService.isParticipant(event.conversationId(), user.getId())) {
+            throw new AccessDeniedException("You are not a participant in this conversation");
+        }
+        messagingTemplate.convertAndSend(
+                WebSocketDestinations.conversationCalls(event.conversationId()),
+                event.withSender(principal.getName())
+        );
     }
 }

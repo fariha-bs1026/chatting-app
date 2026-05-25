@@ -1,12 +1,21 @@
 package com.fariha.chattingapp.entity;
 
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Document(collection = "registration_verifications")
+@CompoundIndex(name = "verification_phone_created_idx", def = "{'phoneNumber': 1, 'createdAt': -1}")
+@CompoundIndex(name = "verification_username_created_idx", def = "{'username': 1, 'createdAt': -1}")
 public class RegistrationVerification {
     @Id
     private String id;
@@ -21,14 +30,12 @@ public class RegistrationVerification {
     private String passwordHash;
     private String codeHash;
     private int attempts;
+    @Setter
     private boolean used;
     private Instant createdAt = Instant.now();
 
     @Indexed(expireAfterSeconds = 0)
     private Instant expiresAt;
-
-    protected RegistrationVerification() {
-    }
 
     public RegistrationVerification(
             String username,
@@ -46,51 +53,7 @@ public class RegistrationVerification {
         this.expiresAt = expiresAt;
     }
 
-    public String getId() {
-        return id;
-    }
-
-    public String getUsername() {
-        return username;
-    }
-
-    public String getDisplayName() {
-        return displayName;
-    }
-
-    public String getPhoneNumber() {
-        return phoneNumber;
-    }
-
-    public String getPasswordHash() {
-        return passwordHash;
-    }
-
-    public String getCodeHash() {
-        return codeHash;
-    }
-
-    public int getAttempts() {
-        return attempts;
-    }
-
-    public boolean isUsed() {
-        return used;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-
-    public Instant getExpiresAt() {
-        return expiresAt;
-    }
-
     public void incrementAttempts() {
         attempts++;
-    }
-
-    public void setUsed(boolean used) {
-        this.used = used;
     }
 }

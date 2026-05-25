@@ -1,6 +1,10 @@
 package com.fariha.chattingapp.entity;
 
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -9,7 +13,10 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Document(collection = "conversations")
+@CompoundIndex(name = "participant_updated_idx", def = "{'participantIds': 1, 'updatedAt': -1}")
 public class Conversation {
     @Id
     private String id;
@@ -31,9 +38,6 @@ public class Conversation {
     private Instant createdAt = Instant.now();
     private Instant updatedAt = Instant.now();
 
-    protected Conversation() {
-    }
-
     public Conversation(boolean direct, Set<String> participantIds) {
         this.direct = direct;
         this.participantIds = new LinkedHashSet<>(participantIds);
@@ -48,47 +52,11 @@ public class Conversation {
         this.participantIds = new LinkedHashSet<>(participantIds);
     }
 
-    public String getId() {
-        return id;
-    }
-
-    public boolean isDirect() {
-        return direct;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public String getCreatorId() {
-        return creatorId;
-    }
-
-    public String getDirectKey() {
-        return directKey;
-    }
-
-    public Set<String> getParticipantIds() {
-        return participantIds;
-    }
-
     public Set<String> getHiddenForUserIds() {
         if (hiddenForUserIds == null) {
             hiddenForUserIds = new LinkedHashSet<>();
         }
         return hiddenForUserIds;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-
-    public Instant getUpdatedAt() {
-        return updatedAt;
     }
 
     public boolean hasParticipant(String userId) {

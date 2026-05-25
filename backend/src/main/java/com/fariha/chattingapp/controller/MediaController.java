@@ -22,11 +22,11 @@ public class MediaController {
     }
 
     @PostMapping
-    @Operation(summary = "Upload an image file", security = @SecurityRequirement(name = "bearerAuth"))
-    public MediaUploadResponse uploadImage(
+    @Operation(summary = "Upload an image, audio, or video file", security = @SecurityRequirement(name = "bearerAuth"))
+    public MediaUploadResponse uploadMedia(
             @RequestPart("file") MultipartFile file,
             @AuthenticationPrincipal UserAccount currentUser
     ) {
-        return mediaStorageService.uploadImage(file, currentUser);
+        return mediaStorageService.uploadMedia(file, currentUser);
     }
 }

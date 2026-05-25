@@ -31,7 +31,7 @@ The backend uses:
 - Spring Security with bearer tokens
 - Spring WebSocket + STOMP
 - Spring Data MongoDB
-- MinIO object storage for uploaded chat images
+- MinIO object storage for uploaded chat media
 - MongoDB Community Server at `mongodb://localhost:27017/chatting_app`
 
 Run:
@@ -68,15 +68,15 @@ mvn spring-boot:run
 
 Do not commit real SMS credentials into `application.properties`.
 
-Uploaded chat images are stored in MinIO. MongoDB stores only message metadata and the MinIO object key. The backend returns short-lived presigned URLs in message responses so the React app can render private images in the browser.
+Uploaded chat images, audio files, and video files are stored in MinIO. MongoDB stores only message metadata and the MinIO object key. The backend returns short-lived presigned URLs in message responses so the React app can render private media in the browser.
 
 Local MinIO defaults:
 
 - API endpoint for Spring Boot outside Docker: `http://localhost:9000`
 - Public browser endpoint: `http://localhost:9000`
 - Console: `http://localhost:9001`
-- Username: `minioadmin`
-- Password: `minioadmin`
+- Username: `chatflow-dev-access` unless `MINIO_ROOT_USER` is set
+- Password: `chatflow-dev-secret-change-me` unless `MINIO_ROOT_PASSWORD` is set
 - Bucket: `chat-media`
 
 Additional local safeguards are enabled by default:
@@ -85,6 +85,7 @@ Additional local safeguards are enabled by default:
 - OTP resend cooldown.
 - OTP daily request limit.
 - Hashed auth-token storage with TTL cleanup.
+- HttpOnly browser auth cookie.
 
 ## Docker Without MongoDB
 
@@ -126,15 +127,22 @@ npm run dev
 - WebSocket topic authorization for conversation subscriptions
 - Message history
 - Cursor-style message pagination
-- Message types: `TEXT`, `IMAGE`, `FILE`
-- MinIO-backed image upload
-- Inline image rendering with presigned media URLs
+- Message types: `TEXT`, `IMAGE`, `AUDIO`, `VIDEO`, `FILE`
+- MinIO-backed image/audio/video upload
+- Inline image/audio/video rendering with presigned media URLs
+- Delete message for me
+- Delete message for everyone
+- Temporary messages
+- Typing indicators
+- Direct audio calls
+- Direct video calls
+- Profile update with avatar upload/delete
 - Message status: `SENT`, `DELIVERED`, `READ`
 - Online/last-seen presence
 - OTP resend cooldown and daily SMS request limit
 - Hashed auth-token storage
 - Request validation with localized validation message bundles
-- Swagger/OpenAPI docs at `http://localhost:8080/swagger-ui/index.html`
+- Swagger/OpenAPI docs at `http://localhost:8080/swagger-ui/index.html` when `SWAGGER_ENABLED=true`
 
 ## Verification
 
@@ -143,5 +151,8 @@ cd backend
 mvn test
 
 cd frontend
+npm run test
+npm run test:coverage
+npm audit --audit-level=moderate
 npm run build
 ```

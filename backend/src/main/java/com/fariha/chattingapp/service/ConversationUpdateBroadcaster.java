@@ -1,5 +1,6 @@
 package com.fariha.chattingapp.service;
 
+import com.fariha.chattingapp.config.WebSocketDestinations;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
@@ -24,7 +25,7 @@ public class ConversationUpdateBroadcaster {
     private void send(ChatService.ConversationBroadcast update) {
         messagingTemplate.convertAndSendToUser(
                 update.username(),
-                "/queue/conversations",
+                WebSocketDestinations.USER_CONVERSATIONS_QUEUE,
                 update.conversation()
         );
     }

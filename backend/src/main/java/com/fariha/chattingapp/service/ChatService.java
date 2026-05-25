@@ -1,8 +1,22 @@
 package com.fariha.chattingapp.service;
 
-import com.fariha.chattingapp.dto.*;
-import com.fariha.chattingapp.entity.*;
-import com.fariha.chattingapp.repository.*;
+import com.fariha.chattingapp.dto.ConversationDto;
+import com.fariha.chattingapp.dto.CreateGroupRequest;
+import com.fariha.chattingapp.dto.MessageDeletionResponse;
+import com.fariha.chattingapp.dto.MessageDto;
+import com.fariha.chattingapp.dto.MessagePageResponse;
+import com.fariha.chattingapp.dto.SendMessageRequest;
+import com.fariha.chattingapp.dto.UserDto;
+import com.fariha.chattingapp.entity.ChatMessage;
+import com.fariha.chattingapp.entity.Conversation;
+import com.fariha.chattingapp.entity.MessageReceipt;
+import com.fariha.chattingapp.entity.MessageStatus;
+import com.fariha.chattingapp.entity.MessageType;
+import com.fariha.chattingapp.entity.UserAccount;
+import com.fariha.chattingapp.repository.ChatMessageRepository;
+import com.fariha.chattingapp.repository.ConversationRepository;
+import com.fariha.chattingapp.repository.MessageReceiptRepository;
+import com.fariha.chattingapp.repository.UserAccountRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
@@ -122,20 +136,30 @@ public class ChatService {
         String content = request.content() == null ? "" : request.content().trim();
         String assetUrl = request.assetUrl() == null || request.assetUrl().isBlank() ? null : request.assetUrl().trim();
         String assetKey = request.assetKey() == null || request.assetKey().isBlank() ? null : request.assetKey().trim();
+        String assetContentType = null;
         if (assetUrl != null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "External media URLs are not supported");
         }
-        if (assetKey != null && !mediaStorageService.isOwnedBy(assetKey, managedSender.getId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You cannot attach media uploaded by another user");
+        if (assetKey != null) {
+            if (!mediaStorageService.isOwnedBy(assetKey, managedSender.getId())) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You cannot attach media uploaded by another user");
+            }
+            assetContentType = mediaStorageService.contentTypeFromObjectKey(assetKey);
+            if (assetContentType == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported media reference");
+            }
         }
         if (content.isBlank() && assetKey == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Message content or media is required");
         }
         if (type == MessageType.TEXT && assetKey != null) {
-            type = MessageType.IMAGE;
+            type = messageTypeForContentType(assetContentType);
         }
         if (type != MessageType.TEXT && assetKey == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Media is required for image or file messages");
+        }
+        if (assetKey != null && !isCompatibleMediaType(type, assetContentType)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Message type does not match uploaded media");
         }
 
         ChatMessage message = messageRepository.save(new ChatMessage(
@@ -145,7 +169,7 @@ public class ChatService {
                 type,
                 null,
                 assetKey,
-                null
+                assetContentType
         ));
         message.setExpiresAt(expiresAt(request.expiresInSeconds()));
         message = messageRepository.save(message);
@@ -422,6 +446,35 @@ public class ChatService {
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported message type");
         }
+    }
+
+    private static MessageType messageTypeForContentType(String contentType) {
+        if (contentType == null) {
+            return MessageType.FILE;
+        }
+        if (contentType.startsWith("image/")) {
+            return MessageType.IMAGE;
+        }
+        if (contentType.startsWith("audio/")) {
+            return MessageType.AUDIO;
+        }
+        if (contentType.startsWith("video/")) {
+            return MessageType.VIDEO;
+        }
+        return MessageType.FILE;
+    }
+
+    private static boolean isCompatibleMediaType(MessageType type, String contentType) {
+        if (type == MessageType.FILE) {
+            return true;
+        }
+        return switch (type) {
+            case IMAGE -> contentType != null && contentType.startsWith("image/");
+            case AUDIO -> contentType != null && contentType.startsWith("audio/");
+            case VIDEO -> contentType != null && contentType.startsWith("video/");
+            case TEXT -> contentType == null;
+            case FILE -> true;
+        };
     }
 
     public static MessageStatus parseStatus(String value) {

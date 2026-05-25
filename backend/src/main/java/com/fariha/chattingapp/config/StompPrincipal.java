@@ -1,8 +1,5 @@
 package com.fariha.chattingapp.config;
 
-import com.fariha.chattingapp.entity.*;
-import com.fariha.chattingapp.service.*;
-
 import java.security.Principal;
 
 public class StompPrincipal implements Principal {

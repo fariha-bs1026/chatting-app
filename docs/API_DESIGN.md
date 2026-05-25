@@ -1,47 +1,49 @@
 # Chatting App API Design
 
-This design follows the WhatsApp-style API reference used during setup: REST for account and setup work, WebSocket/STOMP for live chat events, a messages store with status, a groups store, and last-seen presence.
-
-The backend package layout follows the layered Spring Boot architecture described by [GeeksforGeeks](https://www.geeksforgeeks.org/springboot/spring-boot-architecture/): controller/presentation, service/business, repository/entity persistence, and database layers.
-
-## REST API
-
 Base URL: `http://localhost:8080/api`
 
-Authentication uses a bearer token returned by login/register. Tokens are stored as hashes on the backend.
+The backend uses REST for account/setup/media/history operations and WebSocket/STOMP for live conversation events. Authentication is cookie-based for the browser, with server-side hashed token storage. Bearer tokens are still accepted where explicitly supplied by clients.
+
+## REST API
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `POST` | `/auth/register/start` | Start SMS registration and send a verification code |
-| `POST` | `/auth/register/verify` | Verify SMS code, create account, and return token |
+| `POST` | `/auth/register/verify` | Verify SMS code, create account, and set auth cookie |
 | `POST` | `/auth/register` | Optional direct registration when enabled by config |
-| `POST` | `/auth/login` | Login and return token |
+| `POST` | `/auth/login` | Login and set auth cookie |
 | `GET` | `/auth/me` | Read current user |
-| `POST` | `/auth/logout` | Logout and update last-seen |
-| `GET` | `/users?search=` | Search users/contacts |
+| `POST` | `/auth/logout` | Logout and expire auth cookie |
+| `GET` | `/users?search=` | Search users |
+| `PATCH` | `/users/me` | Update display name, phone number, and avatar |
 | `GET` | `/presence/{userId}` | Read online/last-seen status |
 | `GET` | `/conversations` | List direct and group conversations |
 | `POST` | `/conversations/direct` | Start or fetch a one-to-one conversation |
 | `POST` | `/conversations/groups` | Create a group conversation |
 | `GET` | `/conversations/{conversationId}` | Read conversation details |
-| `DELETE` | `/conversations/{conversationId}` | Delete/hide a chat for the current user |
+| `DELETE` | `/conversations/{conversationId}` | Hide/delete a chat for the current user |
 | `GET` | `/conversations/{conversationId}/messages?limit=50&before=` | Load paginated message history |
 | `POST` | `/conversations/{conversationId}/messages` | Send message over REST fallback |
 | `PATCH` | `/messages/{messageId}/status` | Mark message `SENT`, `DELIVERED`, or `READ` |
-| `POST` | `/media` | Upload an authenticated image file to MinIO |
+| `DELETE` | `/messages/{messageId}?scope=ME` | Hide a message for the current user |
+| `DELETE` | `/messages/{messageId}?scope=EVERYONE` | Replace sender-owned message with a tombstone |
+| `POST` | `/media` | Upload authenticated image, audio, or video media to MinIO |
 
-### Message Shape
+Swagger/OpenAPI is available at `/swagger-ui/index.html` when `SWAGGER_ENABLED=true`.
+
+## Message Shape
 
 ```json
 {
-  "id": "6a0c0c0e9fb98d4fe48f5b0d",
-  "conversationId": "6a0c0c0e9fb98d4fe48f5b0c",
+  "id": "message-id",
+  "conversationId": "conversation-id",
   "sender": {
-    "id": "6a0c0c0e9fb98d4fe48f5b0a",
+    "id": "user-id",
     "username": "max",
     "displayName": "Max",
+    "avatarUrl": "https://signed-avatar-url",
     "online": true,
-    "lastSeenAt": "2026-05-19T06:30:00Z"
+    "lastSeenAt": "2026-05-25T01:30:00Z"
   },
   "content": "Hi Emily",
   "assetKey": null,
@@ -49,68 +51,73 @@ Authentication uses a bearer token returned by login/register. Tokens are stored
   "assetContentType": null,
   "type": "TEXT",
   "status": "SENT",
-  "createdAt": "2026-05-19T06:31:00Z"
+  "deletedForEveryone": false,
+  "expired": false,
+  "deletedAt": null,
+  "expiresAt": null,
+  "createdAt": "2026-05-25T01:31:00Z"
 }
 ```
 
-### Message Page Shape
+Allowed message types are:
 
-```json
-{
-  "messages": [],
-  "nextBefore": "2026-05-19T06:31:00Z",
-  "hasMore": true
-}
-```
+- `TEXT`
+- `IMAGE`
+- `AUDIO`
+- `VIDEO`
+- `FILE`
 
-Use `nextBefore` as the next `before` query parameter to load older messages.
+For media messages:
 
-For image messages, upload the file first:
+1. Upload the file with `POST /api/media` as `multipart/form-data` field `file`.
+2. The backend validates ownership, signature/type, and size, then stores bytes in MinIO.
+3. Send a message with `assetKey` and the matching type, or send `TEXT` and let the backend infer the type from the uploaded object.
 
-1. `POST /api/media` as `multipart/form-data` with field `file`.
-2. The backend validates image size/type, stores the bytes in MinIO, and returns `objectKey` plus a short-lived `assetUrl`.
-3. Send the chat message with `type: "IMAGE"` and `assetKey`.
+MongoDB stores message metadata and MinIO object keys. MinIO stores the binary media. Message responses include short-lived presigned `assetUrl` values.
 
-MongoDB stores the message metadata and MinIO object key. MinIO stores the actual image bytes. Message responses include a presigned `assetUrl` for browser rendering.
+Temporary messages use `expiresInSeconds` on send. Valid values are 1 second through 7 days.
 
 ## WebSocket API
 
 Endpoint: `http://localhost:8080/ws`
 
-The browser connects with STOMP and sends:
-
-```text
-Authorization: Bearer <token>
-```
-
-Conversation topic subscriptions are authorized per conversation. A user must be a participant before subscribing to `/topic/conversations/{conversationId}` or its status/typing child topics.
+Conversation topic subscriptions are authorized per conversation. A user must be a participant before subscribing to any `/topic/conversations/{conversationId}` topic.
 
 ### Client Sends
 
-| Destination | Purpose |
-| --- | --- |
-| `/app/chat.send` | Send one-to-one or group message |
-| `/app/message.status` | Publish delivered/read status update |
-| `/app/chat.typing` | Publish typing state |
+| Destination | Payload | Purpose |
+| --- | --- | --- |
+| `/app/chat.send` | `SendMessageRequest` | Send direct or group message |
+| `/app/message.status` | `MessageStatusEvent` | Publish delivered/read status update |
+| `/app/chat.typing` | `TypingEvent` | Publish typing state |
+| `/app/call.signal` | `CallSignalEvent` | Exchange WebRTC offer/answer/ICE/end/reject signals |
 
 ### Client Subscribes
 
 | Topic | Payload |
 | --- | --- |
-| `/topic/conversations/{conversationId}` | New `MessageDto` |
+| `/user/queue/conversations` | Viewer-specific `ConversationDto` updates |
+| `/topic/conversations/{conversationId}` | New or updated `MessageDto` |
 | `/topic/conversations/{conversationId}/status` | `MessageStatusEvent` |
 | `/topic/conversations/{conversationId}/typing` | `TypingEvent` |
+| `/topic/conversations/{conversationId}/calls` | `CallSignalEvent` |
 
 ## Data Model
 
 | Collection | Main Fields |
 | --- | --- |
-| `users` | username, display name, avatar, online, last seen |
-| `auth_tokens` | token hash, user ID, expiry |
+| `users` | username, display name, phone, avatar key, online, last seen |
+| `auth_tokens` | token hash, user id, expiry |
 | `registration_verifications` | pending SMS registration data, OTP hash, attempts, expiry |
-| `conversations` | direct/group flag, direct key, group name, description, creator ID, participant IDs, timestamps |
-| `messages` | conversation ID, sender ID, content, asset URL, type, status, timestamp |
+| `conversations` | direct/group flag, direct key, group metadata, participant ids, hidden-for ids, timestamps |
+| `messages` | conversation id, sender id, content, asset key/type/content-type, deletion/expiry state, timestamp |
+| `message_receipts` | message id, conversation id, user id, status, updated timestamp |
 
 ## Production Extensions
 
-The current implementation is an MVP. A production version should split or harden these areas later: API gateway, WebSocket handlers, connection manager/cache, message service, asset service, object storage, message queue, groups service, and last-seen service.
+- Add a real contacts collection and phone-number matching.
+- Add refresh-token rotation or a stronger device/session model.
+- Add push notifications.
+- Add TURN for reliable WebRTC calls.
+- Add frontend tests and CI.
+- Add production index migrations instead of relying only on annotation-driven index creation.

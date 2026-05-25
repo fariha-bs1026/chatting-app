@@ -1,10 +1,7 @@
 package com.fariha.chattingapp.controller;
 
-import com.fariha.chattingapp.dto.*;
-import com.fariha.chattingapp.entity.*;
-import com.fariha.chattingapp.repository.*;
-import com.fariha.chattingapp.service.*;
-
+import com.fariha.chattingapp.dto.PresenceDto;
+import com.fariha.chattingapp.repository.UserAccountRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;

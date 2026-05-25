@@ -1,8 +1,17 @@
 package com.fariha.chattingapp.service;
 
-import com.fariha.chattingapp.dto.*;
-import com.fariha.chattingapp.entity.*;
-import com.fariha.chattingapp.repository.*;
+import com.fariha.chattingapp.dto.AuthResponse;
+import com.fariha.chattingapp.dto.CurrentUserDto;
+import com.fariha.chattingapp.dto.LoginRequest;
+import com.fariha.chattingapp.dto.RegisterRequest;
+import com.fariha.chattingapp.dto.RegistrationStartResponse;
+import com.fariha.chattingapp.dto.VerifyRegistrationRequest;
+import com.fariha.chattingapp.entity.AuthToken;
+import com.fariha.chattingapp.entity.RegistrationVerification;
+import com.fariha.chattingapp.entity.UserAccount;
+import com.fariha.chattingapp.repository.AuthTokenRepository;
+import com.fariha.chattingapp.repository.RegistrationVerificationRepository;
+import com.fariha.chattingapp.repository.UserAccountRepository;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;

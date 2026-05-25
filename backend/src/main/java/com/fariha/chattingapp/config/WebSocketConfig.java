@@ -1,8 +1,5 @@
 package com.fariha.chattingapp.config;
 
-import com.fariha.chattingapp.entity.*;
-import com.fariha.chattingapp.service.*;
-
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
@@ -40,9 +37,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
-        registry.enableSimpleBroker("/topic", "/queue");
-        registry.setApplicationDestinationPrefixes("/app");
-        registry.setUserDestinationPrefix("/user");
+        registry.enableSimpleBroker(WebSocketDestinations.TOPIC_PREFIX, WebSocketDestinations.QUEUE_PREFIX);
+        registry.setApplicationDestinationPrefixes(WebSocketDestinations.APPLICATION_PREFIX);
+        registry.setUserDestinationPrefix(WebSocketDestinations.USER_PREFIX);
     }
 
     @Override

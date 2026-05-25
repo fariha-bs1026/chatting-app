@@ -6,19 +6,33 @@ import {
   Camera,
   Check,
   Clock,
+  FileAudio,
   Image,
   LogOut,
+  Mic,
   MoreVertical,
+  Paperclip,
   Pencil,
+  Phone,
+  PhoneOff,
   Search,
   Send,
   Trash2,
   UserPlus,
+  Video,
   Users,
   X
 } from 'lucide-react';
 import { apiFetch, WS_URL } from './api';
 import { clearStoredUser, getStoredUser, storeUser } from './authStorage';
+import {
+  CALL_ICE_SERVERS,
+  CALL_SIGNAL_DESTINATION,
+  callMediaErrorKey,
+  createCallId,
+  mediaConstraintsForCall,
+  parseCallPayload
+} from './callUtils';
 import AuthViewPanel from './components/AuthView';
 import ConversationAvatar from './components/ConversationAvatar';
 import LanguageSelect from './components/LanguageSelect';
@@ -30,7 +44,21 @@ import { conversationSubtitle, conversationTitle, formatTime, initials } from '.
 import { messageFromError } from './errors';
 import { translate } from './i18n';
 import { getStoredLanguage, setStoredLanguage } from './language';
-import { IMAGE_ACCEPT, PHONE_PATTERN, normalizePhoneNumber, validateImageFile, validateProfileForm } from './validation';
+import {
+  expiredMessage,
+  isMessageDeleted,
+  isMessageExpired
+} from './messageUtils';
+import {
+  IMAGE_ACCEPT,
+  MEDIA_ACCEPT,
+  PHONE_PATTERN,
+  messageTypeForFile,
+  normalizePhoneNumber,
+  validateImageFile,
+  validateMediaFile,
+  validateProfileForm
+} from './validation';
 
 const THEME_STORAGE_KEY = 'chatflow-theme';
 const TEMPORARY_MESSAGE_OPTIONS = [
@@ -39,31 +67,6 @@ const TEMPORARY_MESSAGE_OPTIONS = [
   { value: '86400', labelKey: 'message.temporaryOneDay' },
   { value: '604800', labelKey: 'message.temporarySevenDays' }
 ];
-
-function isMessageDeleted(message) {
-  return Boolean(message.deletedForEveryone || message.expired);
-}
-
-function isMessageExpired(message, now = Date.now()) {
-  if (!message.expiresAt || isMessageDeleted(message)) {
-    return false;
-  }
-  const expiresAt = new Date(message.expiresAt).getTime();
-  return Number.isFinite(expiresAt) && expiresAt <= now;
-}
-
-function expiredMessage(message) {
-  return {
-    ...message,
-    content: '',
-    assetUrl: null,
-    assetKey: null,
-    type: 'TEXT',
-    deletedForEveryone: true,
-    expired: true,
-    deletedAt: message.expiresAt || message.deletedAt
-  };
-}
 
 function storedAuth() {
   const user = getStoredUser();
@@ -89,11 +92,22 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [messagePage, setMessagePage] = useState({ nextBefore: null, hasMore: false });
   const [draft, setDraft] = useState('');
+  const [typingUsers, setTypingUsers] = useState({});
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedPreview, setSelectedPreview] = useState('');
   const [expiresInSeconds, setExpiresInSeconds] = useState('');
   const [messageMenuId, setMessageMenuId] = useState(null);
   const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [callState, setCallState] = useState({
+    status: 'idle',
+    mode: null,
+    callId: null,
+    conversationId: null,
+    incoming: null,
+    callerUsername: null
+  });
+  const [localStream, setLocalStream] = useState(null);
+  const [remoteStream, setRemoteStream] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileForm, setProfileForm] = useState({ displayName: '', phoneNumber: '' });
   const [profileFile, setProfileFile] = useState(null);
@@ -113,6 +127,20 @@ function App() {
   const swipeRef = useRef(null);
   const suppressSwipeClickRef = useRef(false);
   const readReceiptSentRef = useRef(new Set());
+  const peerRef = useRef(null);
+  const localStreamRef = useRef(null);
+  const remoteStreamRef = useRef(null);
+  const pendingIceCandidatesRef = useRef([]);
+  const callStateRef = useRef(callState);
+  const typingActiveRef = useRef(false);
+  const typingConversationRef = useRef(null);
+  const typingStopTimeoutRef = useRef(null);
+  const typingClearTimeoutsRef = useRef(new Map());
+  const currentUserRef = useRef(null);
+  const selectedConversationRef = useRef(null);
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
+  const remoteAudioRef = useRef(null);
 
   const currentUser = auth?.user;
   const searchTerm = search.trim().toLowerCase();
@@ -138,7 +166,16 @@ function App() {
       return lastMessage.content;
     }
     if (lastMessage.assetUrl || lastMessage.assetKey) {
-      return lastMessage.type === 'IMAGE' ? t('message.sharedImage') : t('message.attachment');
+      if (lastMessage.type === 'IMAGE') {
+        return t('message.sharedImage');
+      }
+      if (lastMessage.type === 'AUDIO') {
+        return t('message.sharedAudio');
+      }
+      if (lastMessage.type === 'VIDEO') {
+        return t('message.sharedVideo');
+      }
+      return t('message.attachment');
     }
     return conversationSubtext(conversation);
   }, [conversationSubtext, t]);
@@ -239,9 +276,64 @@ function App() {
     });
   }, [conversationLabel, conversationPreview, conversationSubtext, conversations, currentUser, searchTerm]);
 
+  const typingUsernames = useMemo(
+    () => Object.keys(typingUsers).filter((username) => username !== currentUser?.username),
+    [currentUser?.username, typingUsers]
+  );
+
+  const typingLabel = useMemo(() => {
+    if (typingUsernames.length === 0) {
+      return '';
+    }
+    if (typingUsernames.length > 1) {
+      return t('typing.many');
+    }
+    const username = typingUsernames[0];
+    const participant = selectedConversation?.participants?.find((user) => user.username === username);
+    return t('typing.one', { name: participant?.displayName || username });
+  }, [selectedConversation?.participants, t, typingUsernames]);
+
   const searchPlaceholder = sideView === 'people'
     ? peopleMode === 'contacts' ? t('search.contacts') : t('search.peopleByName')
     : sideView === 'groups' ? t('search.people') : t('search.chats');
+
+  useEffect(() => {
+    callStateRef.current = callState;
+  }, [callState]);
+
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+
+  useEffect(() => {
+    selectedConversationRef.current = selectedConversation;
+  }, [selectedConversation]);
+
+  useEffect(() => {
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = localStream;
+    }
+  }, [localStream]);
+
+  useEffect(() => {
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStream;
+    }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = remoteStream;
+    }
+  }, [remoteStream]);
+
+  useEffect(() => () => {
+    peerRef.current?.close();
+    stopMediaStream(localStreamRef.current);
+  }, []);
+
+  useEffect(() => () => {
+    window.clearTimeout(typingStopTimeoutRef.current);
+    typingClearTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    typingClearTimeoutsRef.current.clear();
+  }, []);
 
   const saveAuth = useCallback((data) => {
     if (!data?.user) {
@@ -267,6 +359,81 @@ function App() {
       current?.id === updatedConversation.id ? { ...current, ...updatedConversation } : current
     );
   }, []);
+
+  const sendTypingState = useCallback((typing, conversationId = selectedConversationRef.current?.id) => {
+    const client = stompRef.current;
+    if (!conversationId || !client?.connected) {
+      typingActiveRef.current = false;
+      typingConversationRef.current = null;
+      return;
+    }
+    if (typingActiveRef.current === typing && typingConversationRef.current === conversationId) {
+      return;
+    }
+    typingActiveRef.current = typing;
+    typingConversationRef.current = typing ? conversationId : null;
+    client.publish({
+      destination: '/app/chat.typing',
+      body: JSON.stringify({ conversationId, typing })
+    });
+  }, []);
+
+  const clearRemoteTypingUsers = useCallback(() => {
+    typingClearTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    typingClearTimeoutsRef.current.clear();
+    setTypingUsers({});
+  }, []);
+
+  const removeTypingUser = useCallback((username) => {
+    if (!username) {
+      return;
+    }
+    const timeoutId = typingClearTimeoutsRef.current.get(username);
+    if (timeoutId) {
+      window.clearTimeout(timeoutId);
+      typingClearTimeoutsRef.current.delete(username);
+    }
+    setTypingUsers((current) => {
+      if (!current[username]) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[username];
+      return next;
+    });
+  }, []);
+
+  const handleTypingEvent = useCallback((event) => {
+    const username = event?.username;
+    if (!username || username === currentUserRef.current?.username) {
+      return;
+    }
+    if (!event.typing) {
+      removeTypingUser(username);
+      return;
+    }
+    setTypingUsers((current) => ({ ...current, [username]: true }));
+    const existingTimeout = typingClearTimeoutsRef.current.get(username);
+    if (existingTimeout) {
+      window.clearTimeout(existingTimeout);
+    }
+    const timeoutId = window.setTimeout(() => removeTypingUser(username), 2600);
+    typingClearTimeoutsRef.current.set(username, timeoutId);
+  }, [removeTypingUser]);
+
+  const handleDraftChange = useCallback((event) => {
+    const value = event.target.value;
+    setDraft(value);
+    window.clearTimeout(typingStopTimeoutRef.current);
+
+    if (!value.trim()) {
+      sendTypingState(false);
+      return;
+    }
+
+    sendTypingState(true);
+    typingStopTimeoutRef.current = window.setTimeout(() => sendTypingState(false), 1800);
+  }, [sendTypingState]);
 
   function clearSelectedFile() {
     if (selectedPreview) {
@@ -303,13 +470,13 @@ function App() {
     clearProfileFile();
   }
 
-  function selectImage(event) {
+  function selectMedia(event) {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) {
       return;
     }
-    const validationError = validateImageFile(file);
+    const validationError = validateMediaFile(file);
     if (validationError) {
       setError(validationError);
       return;
@@ -343,7 +510,7 @@ function App() {
     setError('');
   }
 
-  async function uploadImageFile(file) {
+  async function uploadMediaFile(file) {
     const body = new FormData();
     body.append('file', file);
     return apiFetch('/media', {
@@ -352,11 +519,11 @@ function App() {
     });
   }
 
-  async function uploadSelectedImage() {
+  async function uploadSelectedMedia() {
     if (!selectedFile) {
       return null;
     }
-    return uploadImageFile(selectedFile);
+    return uploadMediaFile(selectedFile);
   }
 
   async function saveProfile(event) {
@@ -371,7 +538,7 @@ function App() {
 
     try {
       setSavingProfile(true);
-      const media = profileFile ? await uploadImageFile(profileFile) : null;
+      const media = profileFile ? await uploadMediaFile(profileFile) : null;
       const updatedUser = await apiFetch('/users/me', {
         method: 'PATCH',
         body: {
@@ -450,6 +617,10 @@ function App() {
   }, [currentUser?.id]);
 
   const openConversation = useCallback(async (conversation) => {
+    window.clearTimeout(typingStopTimeoutRef.current);
+    sendTypingState(false);
+    clearRemoteTypingUsers();
+    setDraft('');
     const openedConversation = { ...conversation, unreadCount: 0 };
     setSelectedConversation(openedConversation);
     setMessageMenuId(null);
@@ -463,7 +634,7 @@ function App() {
       hasMore: Boolean(data.hasMore)
     });
     setError('');
-  }, []);
+  }, [clearRemoteTypingUsers, sendTypingState]);
 
   const markMessagesRead = useCallback((messageList) => {
     if (!currentUser?.id || !selectedConversation?.id) {
@@ -586,6 +757,7 @@ function App() {
       `/topic/conversations/${selectedConversation.id}`,
       (payload) => {
         const incoming = JSON.parse(payload.body);
+        removeTypingUser(incoming.sender?.username);
         setMessages((current) => current.some((message) => message.id === incoming.id)
           ? current.map((message) => message.id === incoming.id ? { ...message, ...incoming } : message)
           : [...current, incoming]);
@@ -603,11 +775,39 @@ function App() {
       }
     );
 
+    const typingSubscription = stompRef.current.subscribe(
+      `/topic/conversations/${selectedConversation.id}/typing`,
+      (payload) => {
+        handleTypingEvent(JSON.parse(payload.body));
+      }
+    );
+
+    const callSubscription = stompRef.current.subscribe(
+      `/topic/conversations/${selectedConversation.id}/calls`,
+      (payload) => {
+        handleCallSignal(JSON.parse(payload.body)).catch((exception) => {
+          setError(messageFromError(exception));
+        });
+      }
+    );
+
     return () => {
       messageSubscription.unsubscribe();
       statusSubscription.unsubscribe();
+      typingSubscription.unsubscribe();
+      callSubscription.unsubscribe();
+      sendTypingState(false, selectedConversation.id);
+      clearRemoteTypingUsers();
     };
-  }, [selectedConversation, socketReady, loadConversations]);
+  }, [
+    clearRemoteTypingUsers,
+    handleTypingEvent,
+    loadConversations,
+    removeTypingUser,
+    selectedConversation,
+    sendTypingState,
+    socketReady
+  ]);
 
   useEffect(() => {
     markMessagesRead(messages);
@@ -673,6 +873,7 @@ function App() {
     } catch {}
     clearStoredUser();
     setAuth(null);
+    cleanupCall();
     setSelectedConversation(null);
     setMessages([]);
     setMessagePage({ nextBefore: null, hasMore: false });
@@ -765,6 +966,269 @@ function App() {
     }
   }
 
+  function publishCallSignal(type, payload = null, overrides = {}) {
+    const conversationId = overrides.conversationId || callStateRef.current.conversationId || selectedConversationRef.current?.id;
+    const callId = overrides.callId || callStateRef.current.callId;
+    const mode = overrides.mode || callStateRef.current.mode;
+    if (!conversationId || !callId || !mode || !stompRef.current?.connected) {
+      return false;
+    }
+    stompRef.current.publish({
+      destination: CALL_SIGNAL_DESTINATION,
+      body: JSON.stringify({
+        conversationId,
+        callId,
+        type,
+        mode,
+        payload: payload ? JSON.stringify(payload) : null
+      })
+    });
+    return true;
+  }
+
+  function stopMediaStream(stream) {
+    stream?.getTracks().forEach((track) => track.stop());
+  }
+
+  function resetCallState() {
+    setCallState({
+      status: 'idle',
+      mode: null,
+      callId: null,
+      conversationId: null,
+      incoming: null,
+      callerUsername: null
+    });
+  }
+
+  function cleanupCall() {
+    const peer = peerRef.current;
+    peerRef.current = null;
+    peer?.close();
+    stopMediaStream(localStreamRef.current);
+    localStreamRef.current = null;
+    remoteStreamRef.current = null;
+    pendingIceCandidatesRef.current = [];
+    setLocalStream(null);
+    setRemoteStream(null);
+    resetCallState();
+  }
+
+  function setupPeerConnection(callId, mode, conversationId, stream) {
+    peerRef.current?.close();
+    const peer = new RTCPeerConnection({
+      iceServers: CALL_ICE_SERVERS
+    });
+    const remote = new MediaStream();
+
+    peerRef.current = peer;
+    localStreamRef.current = stream;
+    remoteStreamRef.current = remote;
+    setLocalStream(stream);
+    setRemoteStream(remote);
+
+    stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+    peer.onicecandidate = (event) => {
+      if (event.candidate) {
+        publishCallSignal('ICE', { candidate: event.candidate }, { callId, mode, conversationId });
+      }
+    };
+    peer.ontrack = (event) => {
+      const inboundStream = event.streams[0];
+      const tracks = inboundStream?.getTracks() || [event.track];
+      tracks.forEach((track) => {
+        if (!remote.getTracks().some((existing) => existing.id === track.id)) {
+          remote.addTrack(track);
+        }
+      });
+      const nextRemote = new MediaStream(remote.getTracks());
+      remoteStreamRef.current = nextRemote;
+      setRemoteStream(nextRemote);
+    };
+    peer.onconnectionstatechange = () => {
+      if (['failed', 'closed'].includes(peer.connectionState)) {
+        cleanupCall();
+      }
+    };
+    return peer;
+  }
+
+  async function addPendingIceCandidates(callId) {
+    const peer = peerRef.current;
+    if (!peer) {
+      return;
+    }
+    const pending = pendingIceCandidatesRef.current;
+    pendingIceCandidatesRef.current = pending.filter((item) => item.callId !== callId);
+    for (const item of pending.filter((candidate) => candidate.callId === callId)) {
+      try {
+        await peer.addIceCandidate(new RTCIceCandidate(item.candidate));
+      } catch {}
+    }
+  }
+
+  async function mediaStreamForCall(mode) {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error(t('call.unsupported'));
+    }
+    try {
+      return await navigator.mediaDevices.getUserMedia(mediaConstraintsForCall(mode));
+    } catch (exception) {
+      throw new Error(t(callMediaErrorKey(exception, mode)));
+    }
+  }
+
+  async function startCall(mode) {
+    if (!selectedConversation?.direct) {
+      setError(t('call.directOnly'));
+      return;
+    }
+    if (!socketReady || !stompRef.current?.connected) {
+      setError(t('connection.reconnecting'));
+      return;
+    }
+    if (callStateRef.current.status !== 'idle') {
+      return;
+    }
+
+    const callId = createCallId();
+    const conversationId = selectedConversation.id;
+    try {
+      const stream = await mediaStreamForCall(mode);
+      const peer = setupPeerConnection(callId, mode, conversationId, stream);
+      setCallState({
+        status: 'calling',
+        mode,
+        callId,
+        conversationId,
+        incoming: null,
+        callerUsername: null
+      });
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      publishCallSignal('OFFER', { description: peer.localDescription }, { callId, mode, conversationId });
+      setError('');
+    } catch (exception) {
+      cleanupCall();
+      setError(messageFromError(exception));
+    }
+  }
+
+  async function acceptIncomingCall() {
+    const incoming = callStateRef.current.incoming;
+    if (!incoming) {
+      return;
+    }
+    const payload = parseCallPayload(incoming);
+    try {
+      const stream = await mediaStreamForCall(incoming.mode);
+      const peer = setupPeerConnection(incoming.callId, incoming.mode, incoming.conversationId, stream);
+      setCallState({
+        status: 'connecting',
+        mode: incoming.mode,
+        callId: incoming.callId,
+        conversationId: incoming.conversationId,
+        incoming: null,
+        callerUsername: incoming.senderUsername
+      });
+      await peer.setRemoteDescription(new RTCSessionDescription(payload.description));
+      await addPendingIceCandidates(incoming.callId);
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      publishCallSignal(
+        'ANSWER',
+        { description: peer.localDescription },
+        { callId: incoming.callId, mode: incoming.mode, conversationId: incoming.conversationId }
+      );
+      setCallState((current) => ({ ...current, status: 'in-call' }));
+      setError('');
+    } catch (exception) {
+      cleanupCall();
+      setError(messageFromError(exception));
+    }
+  }
+
+  function rejectIncomingCall() {
+    const incoming = callStateRef.current.incoming;
+    if (incoming) {
+      publishCallSignal('REJECT', null, {
+        callId: incoming.callId,
+        mode: incoming.mode,
+        conversationId: incoming.conversationId
+      });
+    }
+    cleanupCall();
+  }
+
+  function endCall() {
+    const current = callStateRef.current;
+    if (current.status !== 'idle') {
+      publishCallSignal('END', null, {
+        callId: current.callId,
+        mode: current.mode,
+        conversationId: current.conversationId
+      });
+    }
+    cleanupCall();
+  }
+
+  async function handleCallSignal(signal) {
+    if (!signal || signal.senderUsername === currentUserRef.current?.username) {
+      return;
+    }
+    const payload = parseCallPayload(signal);
+    const current = callStateRef.current;
+
+    if (signal.type === 'OFFER') {
+      if (current.status !== 'idle') {
+        publishCallSignal('REJECT', null, {
+          callId: signal.callId,
+          mode: signal.mode,
+          conversationId: signal.conversationId
+        });
+        return;
+      }
+      setCallState({
+        status: 'incoming',
+        mode: signal.mode,
+        callId: signal.callId,
+        conversationId: signal.conversationId,
+        incoming: signal,
+        callerUsername: signal.senderUsername
+      });
+      return;
+    }
+
+    if (signal.callId !== current.callId) {
+      if (signal.type === 'ICE' && payload.candidate) {
+        pendingIceCandidatesRef.current.push({ callId: signal.callId, candidate: payload.candidate });
+      }
+      return;
+    }
+
+    if (signal.type === 'ANSWER' && peerRef.current && payload.description) {
+      await peerRef.current.setRemoteDescription(new RTCSessionDescription(payload.description));
+      await addPendingIceCandidates(signal.callId);
+      setCallState((existing) => ({ ...existing, status: 'in-call' }));
+      return;
+    }
+
+    if (signal.type === 'ICE' && payload.candidate) {
+      if (peerRef.current?.remoteDescription) {
+        try {
+          await peerRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate));
+        } catch {}
+      } else {
+        pendingIceCandidatesRef.current.push({ callId: signal.callId, candidate: payload.candidate });
+      }
+      return;
+    }
+
+    if (signal.type === 'END' || signal.type === 'REJECT') {
+      cleanupCall();
+    }
+  }
+
   function startConversationSwipe(event, conversationId) {
     if (event.pointerType === 'mouse' && event.button !== 0) {
       return;
@@ -823,16 +1287,18 @@ function App() {
 
     try {
       setUploadingMedia(Boolean(selectedFile));
-      const media = await uploadSelectedImage();
+      const media = await uploadSelectedMedia();
       const payload = {
         conversationId: selectedConversation.id,
         content,
-        type: media ? 'IMAGE' : 'TEXT',
+        type: media ? messageTypeForFile(selectedFile) : 'TEXT',
         assetUrl: null,
         assetKey: media?.objectKey || null,
         expiresInSeconds: expiresInSeconds ? Number(expiresInSeconds) : null
       };
 
+      window.clearTimeout(typingStopTimeoutRef.current);
+      sendTypingState(false, selectedConversation.id);
       setDraft('');
       clearSelectedFile();
 
@@ -1163,6 +1629,30 @@ function App() {
                 <h2>{conversationLabel(selectedConversation)}</h2>
                 <span>{conversationSubtext(selectedConversation)}</span>
               </div>
+              {selectedConversation.direct && (
+                <div className="header-call-actions" aria-label={t('call.actions')}>
+                  <button
+                    className="icon-button"
+                    type="button"
+                    onClick={() => startCall('AUDIO')}
+                    disabled={!socketReady || callState.status !== 'idle'}
+                    title={t('call.audio')}
+                    aria-label={t('call.audio')}
+                  >
+                    <Phone size={17} aria-hidden="true" />
+                  </button>
+                  <button
+                    className="icon-button"
+                    type="button"
+                    onClick={() => startCall('VIDEO')}
+                    disabled={!socketReady || callState.status !== 'idle'}
+                    title={t('call.video')}
+                    aria-label={t('call.video')}
+                  >
+                    <Video size={17} aria-hidden="true" />
+                  </button>
+                </div>
+              )}
               <div className={`status-pill ${socketReady ? 'online' : 'offline'}`}>
                 <span className="presence-dot" aria-hidden="true" />
                 {socketReady ? t('connection.live') : t('connection.offline')}
@@ -1177,6 +1667,54 @@ function App() {
                 <Trash2 size={18} aria-hidden="true" />
               </button>
             </header>
+
+            {callState.status !== 'idle' && (
+              <section className={`call-panel ${callState.mode === 'VIDEO' ? 'video' : 'audio'}`}>
+                <div className="call-copy">
+                  <span>{callState.mode === 'VIDEO' ? t('call.video') : t('call.audio')}</span>
+                  <strong>
+                    {callState.status === 'incoming'
+                      ? t('call.incoming', { name: callState.callerUsername || t('conversation.direct') })
+                      : callState.status === 'calling'
+                        ? t('call.calling')
+                        : t('call.active')}
+                  </strong>
+                </div>
+                <div className="call-media">
+                  {callState.mode === 'VIDEO' && (
+                    <>
+                      <video className="remote-video" ref={remoteVideoRef} autoPlay playsInline />
+                      <video className="local-video" ref={localVideoRef} autoPlay muted playsInline />
+                    </>
+                  )}
+                  {callState.mode === 'AUDIO' && (
+                    <div className="audio-call-visual">
+                      <Mic size={22} aria-hidden="true" />
+                    </div>
+                  )}
+                  <audio ref={remoteAudioRef} autoPlay />
+                </div>
+                <div className="call-controls">
+                  {callState.status === 'incoming' && (
+                    <button className="call-accept" type="button" onClick={acceptIncomingCall}>
+                      <Phone size={17} aria-hidden="true" />
+                      {t('call.accept')}
+                    </button>
+                  )}
+                  {callState.status === 'incoming' ? (
+                    <button className="call-end" type="button" onClick={rejectIncomingCall}>
+                      <PhoneOff size={17} aria-hidden="true" />
+                      {t('call.reject')}
+                    </button>
+                  ) : (
+                    <button className="call-end" type="button" onClick={endCall}>
+                      <PhoneOff size={17} aria-hidden="true" />
+                      {t('call.end')}
+                    </button>
+                  )}
+                </div>
+              </section>
+            )}
 
             <div className="chat-body">
               <section className="message-list" aria-live="polite">
@@ -1230,7 +1768,18 @@ function App() {
                           <img src={message.assetUrl} alt={message.content || t('message.sharedImage')} loading="lazy" />
                         </a>
                       )}
-                      {!deleted && message.assetUrl && message.type !== 'IMAGE' && (
+                      {!deleted && message.assetUrl && message.type === 'AUDIO' && (
+                        <div className="audio-attachment">
+                          <FileAudio size={16} aria-hidden="true" />
+                          <audio src={message.assetUrl} controls preload="metadata" />
+                        </div>
+                      )}
+                      {!deleted && message.assetUrl && message.type === 'VIDEO' && (
+                        <a className="video-attachment" href={message.assetUrl} target="_blank" rel="noreferrer">
+                          <video src={message.assetUrl} controls preload="metadata" />
+                        </a>
+                      )}
+                      {!deleted && message.assetUrl && !['IMAGE', 'AUDIO', 'VIDEO'].includes(message.type) && (
                         <a className="asset-link" href={message.assetUrl} target="_blank" rel="noreferrer">
                           <Image size={16} aria-hidden="true" />
                           {t('message.attachment')}
@@ -1244,6 +1793,16 @@ function App() {
                     </article>
                   );
                 })}
+                {typingLabel && (
+                  <div className="typing-indicator" role="status">
+                    <span className="typing-dots" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                    {typingLabel}
+                  </div>
+                )}
               </section>
 
               <aside className="contact-panel">
@@ -1255,8 +1814,14 @@ function App() {
                 </div>
 
                 <div className="contact-actions" aria-label={t('contact.actions')}>
-                  <button type="button">{t('contact.audio')}</button>
-                  <button type="button">{t('contact.video')}</button>
+                  <button type="button" onClick={() => startCall('AUDIO')} disabled={!selectedConversation.direct || callState.status !== 'idle'}>
+                    <Phone size={15} aria-hidden="true" />
+                    {t('contact.audio')}
+                  </button>
+                  <button type="button" onClick={() => startCall('VIDEO')} disabled={!selectedConversation.direct || callState.status !== 'idle'}>
+                    <Video size={15} aria-hidden="true" />
+                    {t('contact.video')}
+                  </button>
                   <button type="button">{t('contact.search')}</button>
                 </div>
 
@@ -1278,7 +1843,17 @@ function App() {
             <form className="composer" onSubmit={sendMessage}>
               {selectedPreview && (
                 <div className="selected-media-preview">
-                  <img src={selectedPreview} alt={t('message.selectedUpload')} />
+                  {selectedFile?.type.startsWith('image/') && (
+                    <img src={selectedPreview} alt={t('message.selectedUpload')} />
+                  )}
+                  {selectedFile?.type.startsWith('audio/') && (
+                    <div className="selected-media-icon">
+                      <FileAudio size={22} aria-hidden="true" />
+                    </div>
+                  )}
+                  {selectedFile?.type.startsWith('video/') && (
+                    <video src={selectedPreview} muted playsInline />
+                  )}
                   <div>
                     <strong>{selectedFile?.name}</strong>
                     <span>{Math.ceil((selectedFile?.size || 0) / 1024)} KB</span>
@@ -1288,12 +1863,12 @@ function App() {
                   </button>
                 </div>
               )}
-              <label className="media-picker" title={t('message.attachImage')} aria-label={t('message.attachImage')}>
-                <Image size={18} aria-hidden="true" />
+              <label className="media-picker" title={t('message.attachMedia')} aria-label={t('message.attachMedia')}>
+                <Paperclip size={18} aria-hidden="true" />
                 <input
                   type="file"
-                  accept={IMAGE_ACCEPT}
-                  onChange={selectImage}
+                  accept={MEDIA_ACCEPT}
+                  onChange={selectMedia}
                 />
               </label>
               <label className="temporary-picker" title={t('message.temporary')}>
@@ -1313,7 +1888,7 @@ function App() {
               <label className="composer-field message-field">
                 <input
                   value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
+                  onChange={handleDraftChange}
                   placeholder={t('message.placeholder')}
                   aria-label={t('message.placeholder')}
                   maxLength={4000}

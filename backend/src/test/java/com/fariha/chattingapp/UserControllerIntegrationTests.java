@@ -57,6 +57,7 @@ class UserControllerIntegrationTests {
     void authenticatedUserCanUpdateProfileDetailsAndAvatar() throws Exception {
         String token = token("profile_user", "Profile User", "+8801710101010");
         when(mediaStorageService.isOwnedBy(anyString(), anyString())).thenReturn(true);
+        when(mediaStorageService.isImageObjectKey(anyString())).thenReturn(true);
         when(mediaStorageService.createReadUrl(anyString())).thenReturn("http://localhost:9000/avatar.png");
 
         mockMvc.perform(patch("/api/users/me")

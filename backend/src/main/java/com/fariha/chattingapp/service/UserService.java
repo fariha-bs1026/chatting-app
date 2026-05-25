@@ -1,9 +1,10 @@
 package com.fariha.chattingapp.service;
 
-import com.fariha.chattingapp.dto.*;
-import com.fariha.chattingapp.entity.*;
-import com.fariha.chattingapp.repository.*;
-
+import com.fariha.chattingapp.dto.CurrentUserDto;
+import com.fariha.chattingapp.dto.UpdateProfileRequest;
+import com.fariha.chattingapp.dto.UserDto;
+import com.fariha.chattingapp.entity.UserAccount;
+import com.fariha.chattingapp.repository.UserAccountRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -63,6 +64,9 @@ public class UserService {
         } else if (avatarKey != null && !avatarKey.isBlank()) {
             if (!mediaStorageService.isOwnedBy(avatarKey, user.getId())) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You cannot use another user's media as your profile picture");
+            }
+            if (!mediaStorageService.isImageObjectKey(avatarKey)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Profile picture must be an image");
             }
             user.setAvatarKey(avatarKey);
             user.setAvatarUrl(null);

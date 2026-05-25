@@ -1,11 +1,15 @@
 package com.fariha.chattingapp.controller;
 
-import com.fariha.chattingapp.dto.*;
-import com.fariha.chattingapp.entity.*;
-import com.fariha.chattingapp.repository.*;
-import com.fariha.chattingapp.service.*;
-
 import com.fariha.chattingapp.config.TokenAuthenticationFilter;
+import com.fariha.chattingapp.dto.AuthResponse;
+import com.fariha.chattingapp.dto.CurrentUserDto;
+import com.fariha.chattingapp.dto.LoginRequest;
+import com.fariha.chattingapp.dto.RegisterRequest;
+import com.fariha.chattingapp.dto.RegistrationStartResponse;
+import com.fariha.chattingapp.dto.VerifyRegistrationRequest;
+import com.fariha.chattingapp.entity.UserAccount;
+import com.fariha.chattingapp.service.AuthService;
+import com.fariha.chattingapp.service.UserService;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -20,6 +24,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -101,15 +107,15 @@ public class AuthController {
                 .build();
     }
 
-    private java.util.Optional<String> authTokenCookie(HttpServletRequest request) {
+    private Optional<String> authTokenCookie(HttpServletRequest request) {
         if (request.getCookies() == null) {
-            return java.util.Optional.empty();
+            return Optional.empty();
         }
         for (Cookie cookie : request.getCookies()) {
             if (TokenAuthenticationFilter.AUTH_COOKIE_NAME.equals(cookie.getName())) {
-                return java.util.Optional.ofNullable(cookie.getValue());
+                return Optional.ofNullable(cookie.getValue());
             }
         }
-        return java.util.Optional.empty();
+        return Optional.empty();
     }
 }

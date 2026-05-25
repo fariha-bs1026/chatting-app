@@ -32,7 +32,7 @@ class MediaStorageServiceValidationTests {
                 "hello".getBytes()
         );
 
-        assertThatThrownBy(() -> mediaStorageService.uploadImage(file, user()))
+        assertThatThrownBy(() -> mediaStorageService.uploadMedia(file, user()))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("400 BAD_REQUEST");
     }
@@ -46,7 +46,7 @@ class MediaStorageServiceValidationTests {
                 "not a real png".getBytes()
         );
 
-        assertThatThrownBy(() -> mediaStorageService.uploadImage(file, user()))
+        assertThatThrownBy(() -> mediaStorageService.uploadMedia(file, user()))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("400 BAD_REQUEST");
     }
@@ -58,6 +58,22 @@ class MediaStorageServiceValidationTests {
         };
 
         assertThat(MediaStorageService.detectImageContentType(pngHeader)).isEqualTo("image/png");
+    }
+
+    @Test
+    void detectsAudioAndVideoSignatures() {
+        byte[] mp3Header = new byte[] { 'I', 'D', '3', 0, 0, 0 };
+        byte[] mp4Header = new byte[] { 0, 0, 0, 24, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm' };
+
+        assertThat(MediaStorageService.detectMediaContentType(mp3Header, "audio/mpeg")).isEqualTo("audio/mpeg");
+        assertThat(MediaStorageService.detectMediaContentType(mp4Header, "video/mp4")).isEqualTo("video/mp4");
+    }
+
+    @Test
+    void mapsObjectKeyExtensionsToContentTypes() {
+        assertThat(mediaStorageService.contentTypeFromObjectKey("users/1/voice.mp3")).isEqualTo("audio/mpeg");
+        assertThat(mediaStorageService.contentTypeFromObjectKey("users/1/movie.mp4")).isEqualTo("video/mp4");
+        assertThat(mediaStorageService.contentTypeFromObjectKey("users/1/clip.video.webm")).isEqualTo("video/webm");
     }
 
     private static UserAccount user() {
